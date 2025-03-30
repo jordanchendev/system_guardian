@@ -1,0 +1,184 @@
+[
+  {
+    "id": "50329f81-6c7d-449d-b637-f1e5a95b57b6",
+    "title": "Database Connection Pool Exhaustion",
+    "category": "database_issues",
+    "severity": "high",
+    "file_path": "database_issues/database-connection-pool-exhaustion.md",
+    "symptoms": [
+      "Application timeout errors when connecting to database",
+      "Error logs showing 'connection limit exceeded'",
+      "Increasing latency in database operations",
+      "Application crashes with database connection errors"
+    ]
+  },
+  {
+    "id": "497b7b77-b27f-41c1-9486-51bd950d9dc4",
+    "title": "Database Replication Lag",
+    "category": "database_issues",
+    "severity": "medium",
+    "file_path": "database_issues/database-replication-lag.md",
+    "symptoms": [
+      "Read replicas showing outdated data",
+      "Monitoring alerts for replication lag exceeding thresholds",
+      "Increasing lag metrics over time",
+      "Data inconsistency reports from users"
+    ]
+  },
+  {
+    "id": "1070e157-dacf-44e9-9605-24f227a5a2b3",
+    "title": "Database Index Corruption",
+    "category": "database_issues",
+    "severity": "high",
+    "file_path": "database_issues/database-index-corruption.md",
+    "symptoms": [
+      "Slow queries that were previously fast",
+      "Error messages about corrupt indexes",
+      "Unexpected query results",
+      "Database logs showing index-related errors"
+    ]
+  },
+  {
+    "id": "de3e2a4c-bcef-49d3-afc3-34bd4081e657",
+    "title": "Network Connectivity Issues Between Services",
+    "category": "network_problems",
+    "severity": "high",
+    "file_path": "network_problems/network-connectivity-issues-between-services.md",
+    "symptoms": [
+      "Timeout errors in service-to-service communication",
+      "Increased latency in API responses",
+      "Connection refused errors in logs",
+      "Intermittent service availability"
+    ]
+  },
+  {
+    "id": "386f2d8a-2656-4836-8f54-512146aef351",
+    "title": "DNS Resolution Failures",
+    "category": "network_problems",
+    "severity": "critical",
+    "file_path": "network_problems/dns-resolution-failures.md",
+    "symptoms": [
+      "Services unable to resolve hostnames",
+      "Error logs showing 'unknown host'",
+      "Intermittent connectivity issues",
+      "Some services working while others fail"
+    ]
+  },
+  {
+    "id": "d22c8ef8-8691-425c-8a29-3c486d006062",
+    "title": "Memory Leaks in Application",
+    "category": "application_errors",
+    "severity": "high",
+    "file_path": "application_errors/memory-leaks-in-application.md",
+    "symptoms": [
+      "Gradually increasing memory usage over time",
+      "OutOfMemoryError exceptions",
+      "Application slowdown before crash",
+      "Increasing garbage collection frequency"
+    ]
+  },
+  {
+    "id": "786dc0a6-4e4f-4c6a-a807-c0acbbfd185e",
+    "title": "API Rate Limiting Errors",
+    "category": "application_errors",
+    "severity": "medium",
+    "file_path": "application_errors/api-rate-limiting-errors.md",
+    "symptoms": [
+      "HTTP 429 (Too Many Requests) responses",
+      "Sudden failure of API-dependent functionalities",
+      "Error logs showing rate limit exceeded",
+      "Increasing latency in API responses before failures"
+    ]
+  },
+  {
+    "id": "72b824b9-8d47-4fac-8309-a211815cdccd",
+    "title": "Authentication Service Breach Attempt",
+    "category": "security_incidents",
+    "severity": "critical",
+    "file_path": "security_incidents/authentication-service-breach-attempt.md",
+    "symptoms": [
+      "Multiple failed login attempts from unusual IP ranges",
+      "Unusual login patterns (time of day, geolocation)",
+      "Attempts to exploit known vulnerabilities in auth system",
+      "Unusual account privilege escalation attempts"
+    ]
+  },
+  {
+    "id": "d2d7eebb-1677-484e-969d-ae07546ff8ab",
+    "title": "Host Server Failure",
+    "category": "infrastructure_failures",
+    "severity": "critical",
+    "file_path": "infrastructure_failures/host-server-failure.md",
+    "symptoms": [
+      "Server unresponsive to ping or SSH",
+      "Services hosted on server unavailable",
+      "Error logs showing connection timeouts",
+      "Monitoring system alerts for host down"
+    ]
+  },
+  {
+    "id": "8490e81d-0fc2-4a71-ade5-ab832e7789fa",
+    "title": "Kubernetes Node Not Ready",
+    "category": "kubernetes_problems",
+    "severity": "high",
+    "file_path": "kubernetes_problems/kubernetes-node-not-ready.md",
+    "symptoms": [
+      "Pods stuck in Pending state",
+      "Kubectl shows node(s) in NotReady state",
+      "Application deployments incomplete",
+      "Kubelet service failures"
+    ]
+  },
+  {
+    "id": "a79bc952-c7c7-4acf-899a-953b866721c0",
+    "title": "Pod Stuck in CrashLoopBackOff",
+    "category": "kubernetes_problems",
+    "severity": "medium",
+    "file_path": "kubernetes_problems/pod-stuck-in-crashloopbackoff.md",
+    "symptoms": [
+      "Pod continuously restarting",
+      "Pod status showing CrashLoopBackOff",
+      "Service unavailability despite pod presence",
+      "Application error logs before crash"
+    ]
+  },
+  {
+    "id": "e48f84ce-d185-4c45-9184-fc25a6edabc8",
+    "title": "AWS S3 Access Issues",
+    "category": "cloud_service_disruptions",
+    "severity": "high",
+    "file_path": "cloud_service_disruptions/aws-s3-access-issues.md",
+    "symptoms": [
+      "Applications unable to read or write to S3 buckets",
+      "Timeout errors when accessing S3",
+      "Increased latency in S3 operations",
+      "Error logs showing S3 access denied or throttling"
+    ]
+  },
+  {
+    "id": "a7f3aca6-0981-4991-b396-b89959b730fd",
+    "title": "High CPU Usage on Application Servers",
+    "category": "performance_issues",
+    "severity": "medium",
+    "file_path": "performance_issues/high-cpu-usage-on-application-servers.md",
+    "symptoms": [
+      "Server responding slowly to requests",
+      "Monitoring alerts for high CPU usage",
+      "Increased response times across multiple services",
+      "Process using abnormally high CPU resources"
+    ]
+  },
+  {
+    "id": "ffa0cd32-f51e-4b85-8c73-bed01ddb2c36",
+    "title": "False Positive Monitoring Alerts",
+    "category": "monitoring_alerts",
+    "severity": "low",
+    "file_path": "monitoring_alerts/false-positive-monitoring-alerts.md",
+    "symptoms": [
+      "Frequent alerts that don't correspond to real issues",
+      "Alert fatigue among team members",
+      "Alerts triggering during known maintenance windows",
+      "Inconsistent alert behavior across similar systems"
+    ]
+  }
+]

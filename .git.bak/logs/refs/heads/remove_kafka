@@ -1,0 +1,9 @@
+0000000000000000000000000000000000000000 4855758b47a7f064e3923e13fca56b2681321411 jordanchenmml <jordanchenml@gmail.com> 1743087632 +0800	branch: Created from HEAD
+4855758b47a7f064e3923e13fca56b2681321411 36632a8470e8a2a4fa14420b2d9a7bf27aca14e4 jordanchenmml <jordanchenml@gmail.com> 1743091749 +0800	commit: stop using kafka.
+36632a8470e8a2a4fa14420b2d9a7bf27aca14e4 e6c671862917ec25f62ef99039dd0548605e4f34 jordanchenmml <jordanchenml@gmail.com> 1743136747 +0800	commit: Add new test script.
+e6c671862917ec25f62ef99039dd0548605e4f34 6737bff0d2dfc590d3c6dcb9b304d91a23cd74b5 jordanchenmml <jordanchenml@gmail.com> 1743160397 +0800	commit: Finish remove kafka
+6737bff0d2dfc590d3c6dcb9b304d91a23cd74b5 2f80a38d9cabcac14ed11ee1a9f6f38c60a82d7f jordanchenmml <jordanchenml@gmail.com> 1743168422 +0800	commit: optimize event_consumer
+2f80a38d9cabcac14ed11ee1a9f6f38c60a82d7f df024f1c4b86a043d119778966050608e6b81d64 jordanchenmml <jordanchenml@gmail.com> 1743332772 +0800	commit: Check connecting to rmq is success. ReadME, Tech Report.
+df024f1c4b86a043d119778966050608e6b81d64 d4f3cc84e0a3cbd8a1a85770044102d709c240a5 jordanchenmml <jordanchenml@gmail.com> 1743340916 +0800	commit: Use gpt-4o and gpt-4o-mini.
+d4f3cc84e0a3cbd8a1a85770044102d709c240a5 151782208f76a599bd3df016eb5b7f7eb3560ade jordanchenmml <jordanchenml@gmail.com> 1743341397 +0800	commit: Use gpt-4o and gpt-4o-mini.
+151782208f76a599bd3df016eb5b7f7eb3560ade 4e09037106650c898ae5778db1e748941b51a60d jordanchenmml <jordanchenml@gmail.com> 1743342479 +0800	commit: Modify docs.

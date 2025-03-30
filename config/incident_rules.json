@@ -1,0 +1,95 @@
+{
+  "sources": {
+    "github": {
+      "conditions": {
+        "issue": {
+          "event_types": [
+            "issues"
+          ],
+          "create_incident_on": [
+            "opened",
+            "edited"
+          ],
+          "keywords": [
+            "critical",
+            "urgent",
+            "broken",
+            "crash",
+            "failure"
+          ],
+          "min_events_threshold": 3,
+          "time_window_minutes": 60,
+          "field_conditions": {}
+        },
+        "pull_request": {
+          "event_types": [
+            "pull_request"
+          ],
+          "create_incident_on": [
+            "closed"
+          ],
+          "keywords": [
+            "fix",
+            "hotfix",
+            "urgent",
+            "emergency"
+          ],
+          "min_events_threshold": 2,
+          "time_window_minutes": 30,
+          "field_conditions": {
+            "state": "closed",
+            "merged": false
+          }
+        }
+      },
+      "auto_create_incident": true,
+      "enabled": true,
+      "global_keywords": [
+        "crash",
+        "bug",
+        "error",
+        "broken"
+      ]
+    },
+    "jira": {
+      "conditions": {
+        "issue": {
+          "event_types": [
+            "issue_created",
+            "issue_updated",
+            "issue_commented"
+          ],
+          "create_incident_on": [
+            "created",
+            "updated"
+          ],
+          "keywords": [
+            "blocker",
+            "critical",
+            "outage",
+            "down",
+            "broken"
+          ],
+          "min_events_threshold": 1,
+          "time_window_minutes": 30,
+          "field_conditions": {}
+        }
+      },
+      "auto_create_incident": true,
+      "enabled": true,
+      "global_keywords": [
+        "bug",
+        "incident",
+        "problem"
+      ]
+    }
+  },
+  "global_keywords": [
+    "critical",
+    "urgent",
+    "emergency",
+    "outage",
+    "down"
+  ],
+  "enabled": true
+}

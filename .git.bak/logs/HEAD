@@ -1,0 +1,38 @@
+0000000000000000000000000000000000000000 8301335a605e873993fceaa4384336176b08076e jordanchenmml <jordanchenml@gmail.com> 1742521476 +0800	commit (initial): Initial commit
+8301335a605e873993fceaa4384336176b08076e c835ff18bc6c91883006bcdaea2e2043b0a76a68 jordanchenmml <jordanchenml@gmail.com> 1742538457 +0800	commit: Initial commit of System Guardian project
+c835ff18bc6c91883006bcdaea2e2043b0a76a68 c835ff18bc6c91883006bcdaea2e2043b0a76a68 jordanchenmml <jordanchenml@gmail.com> 1742538538 +0800	checkout: moving from main to dev
+c835ff18bc6c91883006bcdaea2e2043b0a76a68 3725090f72b8da8e8a4a927be9fb03e3f417ce81 jordanchenmml <jordanchenml@gmail.com> 1742543792 +0800	commit: Modify readme.
+3725090f72b8da8e8a4a927be9fb03e3f417ce81 97f63637121ee96b46a87d80e67a31cb1e6daf36 jordanchenmml <jordanchenml@gmail.com> 1742543982 +0800	commit: Test github webhook.
+97f63637121ee96b46a87d80e67a31cb1e6daf36 83294e9769b93a576fb996a88142528e2b528216 jordanchenmml <jordanchenml@gmail.com> 1742544070 +0800	commit: Test github webhook.
+83294e9769b93a576fb996a88142528e2b528216 63ea1112b96cdb6780df80d7f137c7be3e123522 jordanchenmml <jordanchenml@gmail.com> 1742544328 +0800	commit: Test github webhook.
+63ea1112b96cdb6780df80d7f137c7be3e123522 ce68dad537c12edb2505ec00c87d7dc47f7cbb28 jordanchenmml <jordanchenml@gmail.com> 1742544476 +0800	commit: Test github webhook.
+ce68dad537c12edb2505ec00c87d7dc47f7cbb28 1fcf26b37d148f80f7fe44980ac469988d96c710 jordanchenmml <jordanchenml@gmail.com> 1742544585 +0800	commit: Test github webhook.
+1fcf26b37d148f80f7fe44980ac469988d96c710 d51ebd2058917eae2c22d5fe961c93d9322dd397 jordanchenmml <jordanchenml@gmail.com> 1742545805 +0800	commit: Test github webhook.
+d51ebd2058917eae2c22d5fe961c93d9322dd397 6940df6297169ce42784cf5ca66d52d90a403a40 jordanchenmml <jordanchenml@gmail.com> 1742546390 +0800	commit: Add langchain related dependencies.
+6940df6297169ce42784cf5ca66d52d90a403a40 ae9da41d7a9dfee1522495e19736f21b8688f4c1 jordanchenmml <jordanchenml@gmail.com> 1742550998 +0800	commit: Add langchain related dependencies.
+ae9da41d7a9dfee1522495e19736f21b8688f4c1 aa2b01e5a0c936ab8f9111724f8e12b668648970 jordanchenmml <jordanchenml@gmail.com> 1742551124 +0800	commit: Add langchain related dependencies.
+aa2b01e5a0c936ab8f9111724f8e12b668648970 df5f6aa4d3b2bba93294dfb86bafb1356a300668 jordanchenmml <jordanchenml@gmail.com> 1742551252 +0800	commit: Add langchain related dependencies.
+df5f6aa4d3b2bba93294dfb86bafb1356a300668 3b4ac8626fac841c95ee3a7c58c825f585f6b823 jordanchenmml <jordanchenml@gmail.com> 1742551330 +0800	commit: Add langchain related dependencies.
+3b4ac8626fac841c95ee3a7c58c825f585f6b823 e5397b09e1433a2750501f004d84e4292618e597 jordanchenmml <jordanchenml@gmail.com> 1742553157 +0800	commit: Add langchain related dependencies.
+e5397b09e1433a2750501f004d84e4292618e597 3088833a7b04598531e6055d0443f17f76ebc1b7 jordanchenmml <jordanchenml@gmail.com> 1742553805 +0800	commit: Add langchain related dependencies.
+3088833a7b04598531e6055d0443f17f76ebc1b7 27017003bbf676f65134260f6a95a5b30476840c jordanchenmml <jordanchenml@gmail.com> 1742802529 +0800	commit: Add event consumer. Add logic fot inscert event into db.
+27017003bbf676f65134260f6a95a5b30476840c 5c1e11731ae0ce577661be3cdc396fa6bc27c0bf jordanchenmml <jordanchenml@gmail.com> 1742809678 +0800	commit: Auto-creating incident from event.
+5c1e11731ae0ce577661be3cdc396fa6bc27c0bf 2f8acead0e8fbf7a1fa19530a6c0ae19eaf3c7fd jordanchenmml <jordanchenml@gmail.com> 1742957437 +0800	commit: Optimize kafka and rabbitmq.
+2f8acead0e8fbf7a1fa19530a6c0ae19eaf3c7fd bb440b078744413e625d215e95d35e31897d830e jordanchenmml <jordanchenml@gmail.com> 1742964614 +0800	commit: Optimize resolution.
+bb440b078744413e625d215e95d35e31897d830e f9598c7cd57dcaa5323a86af115bf5be840ff4f4 jordanchenmml <jordanchenml@gmail.com> 1742977030 +0800	commit: Add knowledge into qdrant.
+f9598c7cd57dcaa5323a86af115bf5be840ff4f4 b08aaa7547f66bfd808dfb8760dc997bd6c58bd3 jordanchenmml <jordanchenml@gmail.com> 1743005115 +0800	commit: Add datadog events.
+b08aaa7547f66bfd808dfb8760dc997bd6c58bd3 4855758b47a7f064e3923e13fca56b2681321411 jordanchenmml <jordanchenml@gmail.com> 1743050656 +0800	commit: Create Jira issue while incidents detected.
+4855758b47a7f064e3923e13fca56b2681321411 4855758b47a7f064e3923e13fca56b2681321411 jordanchenmml <jordanchenml@gmail.com> 1743087464 +0800	checkout: moving from dev to opt
+4855758b47a7f064e3923e13fca56b2681321411 8fe77dae7056f5e5080912668c327501d6ff1581 jordanchenmml <jordanchenml@gmail.com> 1743087511 +0800	commit: checkpoint for removing kafka.
+8fe77dae7056f5e5080912668c327501d6ff1581 4855758b47a7f064e3923e13fca56b2681321411 jordanchenmml <jordanchenml@gmail.com> 1743087559 +0800	checkout: moving from opt to dev
+4855758b47a7f064e3923e13fca56b2681321411 4855758b47a7f064e3923e13fca56b2681321411 jordanchenmml <jordanchenml@gmail.com> 1743087632 +0800	checkout: moving from dev to remove_kafka
+4855758b47a7f064e3923e13fca56b2681321411 36632a8470e8a2a4fa14420b2d9a7bf27aca14e4 jordanchenmml <jordanchenml@gmail.com> 1743091749 +0800	commit: stop using kafka.
+36632a8470e8a2a4fa14420b2d9a7bf27aca14e4 e6c671862917ec25f62ef99039dd0548605e4f34 jordanchenmml <jordanchenml@gmail.com> 1743136747 +0800	commit: Add new test script.
+e6c671862917ec25f62ef99039dd0548605e4f34 6737bff0d2dfc590d3c6dcb9b304d91a23cd74b5 jordanchenmml <jordanchenml@gmail.com> 1743160397 +0800	commit: Finish remove kafka
+6737bff0d2dfc590d3c6dcb9b304d91a23cd74b5 2f80a38d9cabcac14ed11ee1a9f6f38c60a82d7f jordanchenmml <jordanchenml@gmail.com> 1743168422 +0800	commit: optimize event_consumer
+2f80a38d9cabcac14ed11ee1a9f6f38c60a82d7f 2f80a38d9cabcac14ed11ee1a9f6f38c60a82d7f jordanchenmml <jordanchenml@gmail.com> 1743331554 +0800	reset: moving to origin/remove_kafka
+2f80a38d9cabcac14ed11ee1a9f6f38c60a82d7f 2f80a38d9cabcac14ed11ee1a9f6f38c60a82d7f jordanchenmml <jordanchenml@gmail.com> 1743331564 +0800	reset: moving to origin/remove_kafka
+2f80a38d9cabcac14ed11ee1a9f6f38c60a82d7f df024f1c4b86a043d119778966050608e6b81d64 jordanchenmml <jordanchenml@gmail.com> 1743332772 +0800	commit: Check connecting to rmq is success. ReadME, Tech Report.
+df024f1c4b86a043d119778966050608e6b81d64 d4f3cc84e0a3cbd8a1a85770044102d709c240a5 jordanchenmml <jordanchenml@gmail.com> 1743340916 +0800	commit: Use gpt-4o and gpt-4o-mini.
+d4f3cc84e0a3cbd8a1a85770044102d709c240a5 151782208f76a599bd3df016eb5b7f7eb3560ade jordanchenmml <jordanchenml@gmail.com> 1743341397 +0800	commit: Use gpt-4o and gpt-4o-mini.
+151782208f76a599bd3df016eb5b7f7eb3560ade 4e09037106650c898ae5778db1e748941b51a60d jordanchenmml <jordanchenml@gmail.com> 1743342479 +0800	commit: Modify docs.

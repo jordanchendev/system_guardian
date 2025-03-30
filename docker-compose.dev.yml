@@ -1,0 +1,82 @@
+services:
+  event_consumer:
+    build:
+      context: .
+      dockerfile: ./deploy/Dockerfile
+      target: dev
+    restart: always
+    command: ["python", "-m", "system_guardian.event_consumer_service"]
+    volumes:
+      - .:/app/src:cached
+    depends_on:
+      db:
+        condition: service_healthy
+      rmq:
+        condition: service_healthy
+    environment:
+      SYSTEM_GUARDIAN_DB_HOST: system_guardian-db
+      SYSTEM_GUARDIAN_DB_PORT: 5432
+      SYSTEM_GUARDIAN_DB_USER: system_guardian
+      SYSTEM_GUARDIAN_DB_PASS: system_guardian
+      SYSTEM_GUARDIAN_DB_BASE: system_guardian
+      SYSTEM_GUARDIAN_RABBIT_HOST: system_guardian-rmq
+      SYSTEM_GUARDIAN_RELOAD: "True"
+      SYSTEM_GUARDIAN_LOG_LEVEL: "DEBUG"
+
+  db:
+    image: postgres:13.8-bullseye
+    hostname: system_guardian-db
+    environment:
+      POSTGRES_PASSWORD: "system_guardian"
+      POSTGRES_USER: "system_guardian"
+      POSTGRES_DB: "system_guardian"
+    volumes:
+    - system_guardian-db-data:/var/lib/postgresql/data
+    restart: always
+    ports:
+    - "5432:5432"
+    healthcheck:
+      test: pg_isready -U system_guardian
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+  rmq:
+    image: rabbitmq:3.9.16-management-alpine
+    hostname: "system_guardian-rmq"
+    restart: always
+    ports:
+    - "5672:5672"
+    - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+      RABBITMQ_DEFAULT_VHOST: "/"
+    healthcheck:
+      test: rabbitmq-diagnostics check_running -q
+      interval: 3s
+      timeout: 3s
+      retries: 50
+
+  qdrant:
+    image: "qdrant/qdrant:v1.7.4"
+    hostname: "system_guardian-qdrant"
+    ports:
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__TELEMETRY_DISABLED: "true"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:6333/healthz"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+volumes:
+  system_guardian-db-data:
+    name: system_guardian-db-data
+  qdrant-data:
+    name: system_guardian-qdrant-data

@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: ./deploy/Dockerfile
+      target: prod
+    image: system_guardian:${SYSTEM_GUARDIAN_VERSION:-latest}
+    restart: always
+    env_file:
+    - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      rmq:
+        condition: service_healthy
+    environment:
+      SYSTEM_GUARDIAN_HOST: 0.0.0.0
+      SYSTEM_GUARDIAN_DB_HOST: system_guardian-db
+      SYSTEM_GUARDIAN_DB_PORT: 5432
+      SYSTEM_GUARDIAN_DB_USER: system_guardian
+      SYSTEM_GUARDIAN_DB_PASS: system_guardian
+      SYSTEM_GUARDIAN_DB_BASE: system_guardian
+      SYSTEM_GUARDIAN_RABBIT_HOST: system_guardian-rmq
+
+  db:
+    image: postgres:13.8-bullseye
+    hostname: system_guardian-db
+    environment:
+      POSTGRES_PASSWORD: "system_guardian"
+      POSTGRES_USER: "system_guardian"
+      POSTGRES_DB: "system_guardian"
+    volumes:
+    - system_guardian-db-data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: pg_isready -U system_guardian
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+  rmq:
+    image: rabbitmq:3.9.16-alpine
+    hostname: "system_guardian-rmq"
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+      RABBITMQ_DEFAULT_VHOST: "/"
+    healthcheck:
+      test: rabbitmq-diagnostics check_running -q
+      interval: 3s
+      timeout: 3s
+      retries: 50
+
+volumes:
+  system_guardian-db-data:
+    name: system_guardian-db-data
