@@ -32,17 +32,13 @@ poetry install
 Create a `.env` file in the project root directory and configure the necessary settings:
 
 ```bash
-SYSTEM_GUARDIAN_DB_HOST=localhost
-SYSTEM_GUARDIAN_DB_PORT=5432
-SYSTEM_GUARDIAN_DB_USER=system_guardian
-SYSTEM_GUARDIAN_DB_PASS=system_guardian
-SYSTEM_GUARDIAN_DB_BASE=system_guardian
-SYSTEM_GUARDIAN_RABBIT_HOST=localhost
-OPENAI_API_KEY=your-openai-api-key
-SLACK_BOT_TOKEN=your-slack-bot-token
-GITHUB_WEBHOOK_SECRET=your-github-webhook-secret
-SYSTEM_GUARDIAN_QDRANT_HOST=localhost
-SYSTEM_GUARDIAN_QDRANT_PORT=6333
+SYSTEM_GUARDIAN_OPENAI_API_KEY=your-openai-api-key
+SYSTEM_GUARDIAN_SLACK_BOT_TOKEN=your-slack-bot-token
+SYSTEM_GUARDIAN_SLACK_CHANNEL_ID=channel-id
+SYSTEM_GUARDIAN_JIRA_URL=your_jira_url
+SYSTEM_GUARDIAN_JIRA_USERNAME=your_jira_email
+SYSTEM_GUARDIAN_JIRA_API_TOKEN=your_jira_api_token
+SYSTEM_GUARDIAN_JIRA_PROJECT_KEY=your_project_key
 ```
 
 ### 3️⃣ Run the Application
@@ -52,7 +48,7 @@ SYSTEM_GUARDIAN_QDRANT_PORT=6333
 Start the development environment services (Database, RabbitMQ, Qdrant) using Docker Compose:
 
 ```bash
-docker-compose -f deploy/docker-compose.dev.yml up --build
+docker-compose -f docker-compose.dev.yml up --build
 ```
 
 Then run the FastAPI service locally:
@@ -61,12 +57,12 @@ Then run the FastAPI service locally:
 poetry run python -m system_guardian
 ```
 
-#### Production Environment
+#### Docker Compose Setup (Experimental)
 
-Start the complete production environment (including all services) using Docker Compose from the project root directory:
+> **Note**: The whole project Docker Compose setup is currently under development and not yet ready for use. 
 
 ```bash
-docker-compose -f deploy/docker-compose.yml up --build
+docker-compose -f docker-compose.yml up --build
 ```
 
 This will launch the following services:
@@ -75,6 +71,39 @@ This will launch the following services:
 - PostgreSQL database
 - RabbitMQ message queue
 - Qdrant vector database
+
+### 4️⃣ Webhook Setup with ngrok
+
+To receive webhooks from external services (GitHub, Jira, etc.), you'll need to expose your local server to the internet. We recommend using ngrok for this purpose:
+
+1. Install ngrok:
+```bash
+# macOS with Homebrew
+brew install ngrok
+
+# Windows with Chocolatey
+choco install ngrok
+
+# Linux
+snap install ngrok
+```
+
+2. Sign up for a free ngrok account at [https://ngrok.com](https://ngrok.com) and get your authtoken
+
+3. Configure ngrok with your authtoken:
+```bash
+ngrok config add-authtoken your-authtoken
+```
+
+4. Start ngrok to expose your FastAPI server:
+```bash
+ngrok http --domain=your-domain 5566
+```
+
+5. Update your webhook URLs in external services with the ngrok URL:
+- GitHub webhook URL: `https://your-ngrok-url/api/v1/ingest/github/`
+- Jira webhook URL: `https://your-ngrok-url/api/v1/ingest/jira/`
+- Datadog webhook URL: `https://your-ngrok-url/api/v1/ingest/datadog/` 
 
 ---
 
@@ -117,10 +146,6 @@ FastAPI's auto-generated API documentation interface:
 These visualization interfaces greatly simplify the development and debugging process, allowing you to intuitively understand the operational status of the system.
 
 ---
-
-## 📝 Contributing
-
-Contributions are welcome! Please check out our [contribution guidelines](CONTRIBUTING.md) to learn how to participate in this project.
 
 ## 📄 License
 

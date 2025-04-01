@@ -584,7 +584,13 @@ class EventConsumer:
         return title, description
 
     async def _find_similar_incident(self, event_text, incident_ids):
-        """Find similar incidents using vector search."""
+        """
+        Find similar incidents using vector search.
+
+        :param event_text: Text to find similar incidents for
+        :param incident_ids: List of incident IDs to search within
+        :returns: ID of the most similar incident if found, None otherwise
+        """
         from system_guardian.services.ai.incident_similarity import (
             IncidentSimilarityService,
         )

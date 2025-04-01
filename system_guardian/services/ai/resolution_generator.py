@@ -184,7 +184,7 @@ class ResolutionGenerator(AIServiceBase):
         Find similar incidents using the AI engine.
 
         :param incident_text: Text representation of the incident
-        :return: List of similar incidents
+        :returns: List of similar incidents with similarity scores
         """
         try:
             similar_incidents = await self.ai_engine.find_similar_incidents(

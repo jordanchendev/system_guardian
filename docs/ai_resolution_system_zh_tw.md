@@ -65,9 +65,9 @@ System Guardian 使用事件驅動的微服務架構從多個來源提取事件�
 System Guardian 提供一系列 REST API 端點，用於與其他系統整合：
 
 1. **資料提取 API**
-   - `/api/ingest/github`：接收 GitHub 事件
-   - `/api/ingest/datadog`：處理 Datadog 警報
-   - `/api/ingest/jira`：接收 Jira 事件
+   - `/api/ingest/github/`：接收 GitHub 事件
+   - `/api/ingest/datadog/`：處理 Datadog 警報
+   - `/api/ingest/jira/`：接收 Jira 事件
    - `/api/vector-db/knowledge/upload`：將技術文檔上傳至向量資料庫作為知識庫
 
 2. **解決方案和事件管理 API**

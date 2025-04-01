@@ -65,9 +65,9 @@ System Guardian uses an event-driven microservices architecture to extract event
 System Guardian provides a series of REST API endpoints for integration with other systems:
 
 1. **Data Extraction API**
-   - `/api/ingest/github`: Receive GitHub events
-   - `/api/ingest/datadog`: Handle Datadog alerts
-   - `/api/ingest/jira`: Receive Jira events
+   - `/api/ingest/github/`: Receive GitHub events
+   - `/api/ingest/datadog/`: Handle Datadog alerts
+   - `/api/ingest/jira/`: Receive Jira events
    - `/api/vector-db/knowledge/upload`: Upload technical documentation to vector database as knowledge base
 
 2. **Solution and Event Management API**

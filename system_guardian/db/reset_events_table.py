@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Reset events table to resolve event insertion issues
-This script will completely rebuild the events table structure
-"""
-
 import asyncio
 import asyncpg
 from loguru import logger
@@ -11,9 +5,17 @@ from system_guardian.settings import settings
 
 
 async def reset_events_table():
-    """Completely rebuild the events table to fix potential structure issues"""
+    """
+    Completely rebuild the events table to fix potential structure issues.
+
+    This function handles the complete process of rebuilding the events table,
+    including data backup, table recreation, and data restoration.
+
+    :returns: None
+    :raises: Exception if any step of the process fails
+    """
     connection_string = str(settings.db_url).replace("postgresql+asyncpg", "postgresql")
-    print(f"Connecting to database: {connection_string}")
+    logger.info(f"Connecting to database: {connection_string}")
 
     try:
         # Connect to database
@@ -30,7 +32,7 @@ async def reset_events_table():
         )
 
         if exists:
-            print("Found existing events table, preparing to backup and rebuild")
+            logger.info("Found existing events table, preparing to backup and rebuild")
 
             # Backup table structure
             schema = await connection.fetch(
@@ -42,7 +44,7 @@ async def reset_events_table():
                 """
             )
 
-            print(
+            logger.info(
                 f"Current table structure: {', '.join([col['column_name'] for col in schema])}"
             )
 
@@ -50,7 +52,7 @@ async def reset_events_table():
             try:
                 backup_count = await connection.fetchval("SELECT COUNT(*) FROM events")
                 if backup_count > 0:
-                    print(f"Found {backup_count} event records, preparing backup")
+                    logger.info(f"Found {backup_count} event records, preparing backup")
 
                     # Create temporary backup table
                     await connection.execute(
@@ -63,17 +65,17 @@ async def reset_events_table():
                     backup_verify = await connection.fetchval(
                         "SELECT COUNT(*) FROM events_backup"
                     )
-                    print(
+                    logger.info(
                         f"Backed up {backup_verify} event records to events_backup table"
                     )
                 else:
-                    print("No data in events table, no backup needed")
+                    logger.info("No data in events table, no backup needed")
             except Exception as backup_err:
-                print(f"Error backing up data: {str(backup_err)}")
-                print("Continuing with table rebuild")
+                logger.error(f"Error backing up data: {str(backup_err)}")
+                logger.info("Continuing with table rebuild")
 
             # Remove foreign key constraints
-            print("Removing foreign key constraints...")
+            logger.info("Removing foreign key constraints...")
             await connection.execute(
                 """
                 DO $$
@@ -102,12 +104,12 @@ async def reset_events_table():
             )
 
             # Delete table
-            print("Deleting events table...")
+            logger.info("Deleting events table...")
             await connection.execute("DROP TABLE IF EXISTS events CASCADE")
-            print("Events table deleted")
+            logger.info("Events table deleted")
 
         # Create brand new events table
-        print("Creating new events table...")
+        logger.info("Creating new events table...")
         await connection.execute(
             """
             CREATE TABLE events (
@@ -120,10 +122,10 @@ async def reset_events_table():
             )
             """
         )
-        print("New events table created successfully")
+        logger.info("New events table created successfully")
 
         # Add foreign key constraints
-        print("Adding foreign key constraints...")
+        logger.info("Adding foreign key constraints...")
         await connection.execute(
             """
             ALTER TABLE events 
@@ -132,7 +134,7 @@ async def reset_events_table():
             REFERENCES incidents(id) ON DELETE SET NULL
             """
         )
-        print("Foreign key constraints added successfully")
+        logger.info("Foreign key constraints added successfully")
 
         # Restore backup data (if any)
         try:
@@ -151,7 +153,9 @@ async def reset_events_table():
                 )
 
                 if backup_count > 0:
-                    print(f"Restoring {backup_count} records from backup table...")
+                    logger.info(
+                        f"Restoring {backup_count} records from backup table..."
+                    )
 
                     # Restore data from backup using new column names
                     await connection.execute(
@@ -173,16 +177,16 @@ async def reset_events_table():
                     )
 
                     restored = await connection.fetchval("SELECT COUNT(*) FROM events")
-                    print(f"Successfully restored {restored} records")
+                    logger.info(f"Successfully restored {restored} records")
 
                 # Delete backup table
                 await connection.execute("DROP TABLE events_backup")
-                print("Backup table deleted")
+                logger.info("Backup table deleted")
         except Exception as restore_err:
-            print(f"Error restoring data: {str(restore_err)}")
+            logger.error(f"Error restoring data: {str(restore_err)}")
 
         # Fix sequence numbers
-        print("Fixing auto-increment sequence...")
+        logger.info("Fixing auto-increment sequence...")
         await connection.execute(
             """
             SELECT setval('events_id_seq', COALESCE((SELECT MAX(id) FROM events), 0) + 1, false)
@@ -199,18 +203,19 @@ async def reset_events_table():
             """
         )
 
-        print("Table structure after rebuild:")
+        logger.info("Table structure after rebuild:")
         for col in schema:
-            print(
+            logger.info(
                 f"- {col['column_name']} ({col['data_type']}, {'NULL' if col['is_nullable'] == 'YES' else 'NOT NULL'})"
             )
 
         # Close connection
         await connection.close()
-        print("Table rebuild complete!")
+        logger.success("Table rebuild complete!")
 
     except Exception as e:
-        print(f"Error rebuilding table: {str(e)}")
+        logger.error(f"Error rebuilding table: {str(e)}")
+        raise
 
 
 if __name__ == "__main__":

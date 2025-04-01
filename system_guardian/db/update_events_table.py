@@ -1,24 +1,40 @@
 #!/usr/bin/env python3
 """
-更新events表中的incident_id列為related_incident_id
-此腳本將執行資料庫結構變更
+Update the events table by renaming incident_id column to related_incident_id.
+
+This script performs database schema changes to rename the incident_id column
+to related_incident_id in the events table. It handles various edge cases and
+provides detailed logging of the process.
+
+:returns: None
 """
 
 import asyncio
 import asyncpg
+from loguru import logger
 from system_guardian.settings import settings
 
 
 async def update_events_table_schema():
-    """將events表中的incident_id列改名為related_incident_id"""
+    """
+    Rename the incident_id column to related_incident_id in the events table.
+
+    This function performs the following steps:
+    1. Checks if related_incident_id column already exists
+    2. Checks if incident_id column exists
+    3. Attempts to rename the column or creates a new one if needed
+    4. Validates the changes
+
+    :returns: None
+    """
     connection_string = str(settings.db_url).replace("postgresql+asyncpg", "postgresql")
-    print(f"使用連接字符串: {connection_string}")
+    logger.info(f"Using connection string: {connection_string}")
 
     try:
-        # 連接數據庫
+        # Connect to database
         connection = await asyncpg.connect(connection_string)
 
-        # 1. 檢查是否已經有related_incident_id列
+        # 1. Check if related_incident_id column exists
         has_related = await connection.fetchval(
             """
             SELECT EXISTS (
@@ -29,11 +45,11 @@ async def update_events_table_schema():
         )
 
         if has_related:
-            print("related_incident_id列已存在，無需更新")
+            logger.info("related_incident_id column already exists, no update needed")
             await connection.close()
             return
 
-        # 2. 檢查是否有incident_id列
+        # 2. Check if incident_id column exists
         has_incident = await connection.fetchval(
             """
             SELECT EXISTS (
@@ -44,10 +60,10 @@ async def update_events_table_schema():
         )
 
         if not has_incident:
-            print("events表中不存在incident_id列，無法重命名")
+            logger.warning("incident_id column does not exist in events table")
 
-            # 直接創建新列
-            print("嘗試直接創建related_incident_id列")
+            # Create new column directly
+            logger.info("Attempting to create related_incident_id column")
             await connection.execute(
                 """
                 ALTER TABLE events 
@@ -55,31 +71,33 @@ async def update_events_table_schema():
                 REFERENCES incidents(id) ON DELETE SET NULL
                 """
             )
-            print("成功創建related_incident_id列")
+            logger.success("Successfully created related_incident_id column")
             await connection.close()
             return
 
-        # 3. 重命名列
-        print("將events表中的incident_id列重命名為related_incident_id")
+        # 3. Rename column
+        logger.info(
+            "Renaming incident_id column to related_incident_id in events table"
+        )
         try:
-            # 先備份數據
-            print("備份events表中的incident_id列值")
+            # Backup data first
+            logger.info("Backing up incident_id values from events table")
             events_data = await connection.fetch(
                 "SELECT id, incident_id FROM events WHERE incident_id IS NOT NULL"
             )
-            print(f"找到 {len(events_data)} 個有incident_id值的事件")
+            logger.info(f"Found {len(events_data)} events with incident_id values")
 
-            # 嘗試重命名列
+            # Attempt to rename column
             await connection.execute(
                 """
                 BEGIN;
-                -- 刪除原有的外鍵約束
+                -- Drop existing foreign key constraint
                 ALTER TABLE events DROP CONSTRAINT IF EXISTS events_incident_id_fkey;
                 
-                -- 重命名列
+                -- Rename column
                 ALTER TABLE events RENAME COLUMN incident_id TO related_incident_id;
                 
-                -- 添加新的外鍵約束
+                -- Add new foreign key constraint
                 ALTER TABLE events 
                 ADD CONSTRAINT events_related_incident_id_fkey 
                 FOREIGN KEY (related_incident_id) 
@@ -88,22 +106,24 @@ async def update_events_table_schema():
                 COMMIT;
                 """
             )
-            print("成功將incident_id列重命名為related_incident_id")
+            logger.success(
+                "Successfully renamed incident_id column to related_incident_id"
+            )
 
         except Exception as rename_err:
-            print(f"重命名列時出錯: {str(rename_err)}")
+            logger.error(f"Error during column rename: {str(rename_err)}")
 
-            # 嘗試創建新列並複製數據
+            # Try creating new column and copying data
             if len(events_data) > 0:
-                print("嘗試創建新列並複製數據")
+                logger.info("Attempting to create new column and copy data")
                 try:
                     await connection.execute(
                         """
                         BEGIN;
-                        -- 添加新列
+                        -- Add new column
                         ALTER TABLE events ADD COLUMN related_incident_id INTEGER;
                         
-                        -- 添加外鍵約束
+                        -- Add foreign key constraint
                         ALTER TABLE events 
                         ADD CONSTRAINT events_related_incident_id_fkey 
                         FOREIGN KEY (related_incident_id) 
@@ -113,7 +133,7 @@ async def update_events_table_schema():
                         """
                     )
 
-                    # 複製數據
+                    # Copy data
                     for event in events_data:
                         event_id = event["id"]
                         incident_id = event["incident_id"]
@@ -124,18 +144,22 @@ async def update_events_table_schema():
                                 event_id,
                             )
 
-                    print(f"已成功為 {len(events_data)} 個事件設置related_incident_id")
+                    logger.success(
+                        f"Successfully set related_incident_id for {len(events_data)} events"
+                    )
 
-                    # 創建成功，現在刪除舊列
+                    # Create successful, now drop old column
                     await connection.execute(
                         "ALTER TABLE events DROP COLUMN incident_id"
                     )
-                    print("成功刪除舊的incident_id列")
+                    logger.success("Successfully dropped old incident_id column")
 
                 except Exception as create_err:
-                    print(f"創建新列和複製數據時出錯: {str(create_err)}")
+                    logger.error(
+                        f"Error during new column creation and data copy: {str(create_err)}"
+                    )
 
-        # 4. 驗證結果
+        # 4. Validate results
         has_related_after = await connection.fetchval(
             """
             SELECT EXISTS (
@@ -146,11 +170,13 @@ async def update_events_table_schema():
         )
 
         if has_related_after:
-            print("驗證成功：related_incident_id列現在存在")
+            logger.success(
+                "Validation successful: related_incident_id column now exists"
+            )
         else:
-            print("驗證失敗：related_incident_id列不存在")
+            logger.error("Validation failed: related_incident_id column does not exist")
 
-        # 檢查incident_id是否已被刪除
+        # Check if incident_id has been removed
         has_incident_after = await connection.fetchval(
             """
             SELECT EXISTS (
@@ -161,15 +187,15 @@ async def update_events_table_schema():
         )
 
         if not has_incident_after:
-            print("驗證成功：incident_id列已被刪除")
+            logger.success("Validation successful: incident_id column has been removed")
         else:
-            print("警告：incident_id列仍然存在")
+            logger.warning("Warning: incident_id column still exists")
 
-        # 關閉連接
+        # Close connection
         await connection.close()
 
     except Exception as e:
-        print(f"錯誤: {str(e)}")
+        logger.error(f"Error: {str(e)}")
 
 
 if __name__ == "__main__":
