@@ -32,6 +32,13 @@ poetry install
 Create a `.env` file in the project root directory and configure the necessary settings:
 
 ```bash
+# Copy the example environment file and modify with your own values
+cp .env.example .env
+```
+
+Then update the `.env` file with your configuration:
+
+```bash
 SYSTEM_GUARDIAN_OPENAI_API_KEY=your-openai-api-key
 SYSTEM_GUARDIAN_SLACK_BOT_TOKEN=your-slack-bot-token
 SYSTEM_GUARDIAN_SLACK_CHANNEL_ID=channel-id
