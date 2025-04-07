@@ -27,6 +27,7 @@ from system_guardian.services.ai.engine import AIEngine
 from system_guardian.services.vector_db.dependencies import get_qdrant_client
 from system_guardian.settings import settings
 from system_guardian.logging_config import configure_sqlalchemy_logging
+from langchain_litellm.chat_models import ChatLiteLLM
 
 # Ensure SQLAlchemy logging is disabled after importing any SQLAlchemy
 configure_sqlalchemy_logging()
@@ -136,14 +137,12 @@ async def main():
     # Initialize AI services
     logger.info("Initializing AI engine...")
     try:
-        llm_client = AsyncOpenAI(api_key=settings.openai_api_key)
         # Get QDrant client synchronously, without using await
         vector_db_client = get_qdrant_client()
 
         # Create AI engine
         ai_engine = AIEngine(
             vector_db_client=vector_db_client,
-            llm_client=llm_client,
             embedding_model=settings.openai_embedding_model,
             llm_model=settings.openai_completion_model,
             enable_metrics=True,

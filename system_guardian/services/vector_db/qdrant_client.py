@@ -329,12 +329,10 @@ class QdrantClient:
             from openai import AsyncOpenAI
 
             # Initialize OpenAI client
-            openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
 
             # Initialize AIEngine
             ai_engine = AIEngine(
                 vector_db_client=self,
-                llm_client=openai_client,
                 embedding_model=settings.openai_embedding_model,
                 llm_model=settings.openai_completion_model,
                 cache_size=100,

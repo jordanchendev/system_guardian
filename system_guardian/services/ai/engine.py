@@ -6,6 +6,8 @@ from functools import lru_cache
 import sqlalchemy
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from langchain_litellm.chat_models import ChatLiteLLM
+from system_guardian.settings import settings
 
 from loguru import logger
 
@@ -16,7 +18,7 @@ class AIEngine:
     def __init__(
         self,
         vector_db_client,
-        llm_client,
+        llm_client: Optional[ChatLiteLLM] = None,
         embedding_model: str = "text-embedding-ada-002",
         llm_model: str = "gpt-3.5-turbo",
         cache_size: int = 100,
@@ -27,7 +29,7 @@ class AIEngine:
         Initialize the AI Engine.
 
         :param vector_db_client: Client for vector database operations
-        :param llm_client: Client for LLM operations (OpenAI)
+        :param llm_client: Optional ChatLiteLLM client for LLM operations
         :param embedding_model: Model to use for embeddings generation
         :param llm_model: Default LLM model to use for text generation
         :param cache_size: Size of the LRU cache for embeddings
@@ -35,7 +37,6 @@ class AIEngine:
         :param plugins: Optional dictionary of plugin instances to extend functionality
         """
         self.vector_db = vector_db_client
-        self.llm = llm_client
         self.embedding_model = embedding_model
         self.llm_model = llm_model
         self.cache_size = cache_size
@@ -48,6 +49,15 @@ class AIEngine:
             "vector_search_calls": 0,
             "total_processing_time": 0,
         }
+
+        # Initialize LLM client
+        if llm_client:
+            self.llm = llm_client
+        else:
+            self.llm = ChatLiteLLM(
+                model=self.llm_model,
+                api_key=settings.openai_api_key,
+            )
 
         # Initialize plugins
         self.plugins = plugins or {}
