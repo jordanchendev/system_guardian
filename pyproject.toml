@@ -23,7 +23,6 @@ SQLAlchemy = {version = "^2.0.18", extras = ["asyncio"]}
 asyncpg = {version = "^0.28.0", extras = ["sa"]}
 aio-pika = "^9.1.4"
 loguru = "^0.7.0"
-openai = "1.55.2"
 langchain-community = "0.3.7"
 langchain-openai = "0.2.9"
 langgraph = "0.2.52"
@@ -37,6 +36,7 @@ psutil = "^7.0.0"
 python-multipart = "^0.0.20"
 slack-sdk = "^3.28.1"
 jira = "^3.5.1"
+langchain-litellm = "^0.1.4"
 
 [tool.poetry.dev-dependencies]
 pytest = "7.4.4"
