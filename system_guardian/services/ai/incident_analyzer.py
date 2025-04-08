@@ -212,9 +212,10 @@ class IncidentAnalyzer:
             )
 
             logger.info(f"Using AI model {model} for failure pattern analysis")
-            response = await self.ai_engine.llm.chat.completions.create(
-                model=model,
-                messages=[
+
+            # Call the LLM through AI engine
+            response = await self.ai_engine.llm.ainvoke(
+                [
                     {
                         "role": "system",
                         "content": "You are an expert incident analyzer specializing in identifying patterns and root causes.",
@@ -225,9 +226,19 @@ class IncidentAnalyzer:
                 response_format={"type": "json_object"},
             )
 
-            # Parse the response
-            response_text = response.choices[0].message.content
-            patterns = json.loads(response_text)
+            # Extract content from the response
+            content = (
+                response.content if hasattr(response, "content") else str(response)
+            )
+
+            # Try to find JSON content in the output
+            json_start = content.find("{")
+            json_end = content.rfind("}") + 1
+            if json_start >= 0 and json_end > json_start:
+                json_content = content[json_start:json_end]
+                patterns = json.loads(json_content)
+            else:
+                patterns = json.loads(content)
 
             # Return the enhanced analysis
             return patterns.get("patterns", patterns)
@@ -362,9 +373,9 @@ class IncidentAnalyzer:
                 }}
                 """
 
-                response = await self.ai_engine.llm.chat.completions.create(
-                    model=model,
-                    messages=[
+                # Call the LLM through AI engine
+                response = await self.ai_engine.llm.ainvoke(
+                    [
                         {
                             "role": "system",
                             "content": "You are an expert incident trend analyst providing actionable insights.",
@@ -375,9 +386,19 @@ class IncidentAnalyzer:
                     response_format={"type": "json_object"},
                 )
 
-                # Parse the response
-                response_text = response.choices[0].message.content
-                trend_report = json.loads(response_text)
+                # Extract content from the response
+                content = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
+
+                # Try to find JSON content in the output
+                json_start = content.find("{")
+                json_end = content.rfind("}") + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_content = content[json_start:json_end]
+                    trend_report = json.loads(json_content)
+                else:
+                    trend_report = json.loads(content)
 
                 # Combine with statistics
                 return {
@@ -589,9 +610,9 @@ class IncidentAnalyzer:
                 }}
                 """
 
-                response = await self.ai_engine.llm.chat.completions.create(
-                    model=model,
-                    messages=[
+                # Call the LLM through AI engine
+                response = await self.ai_engine.llm.ainvoke(
+                    [
                         {
                             "role": "system",
                             "content": "You are an expert in root cause analysis for IT incidents. Provide detailed technical analysis and actionable recommendations.",
@@ -602,9 +623,19 @@ class IncidentAnalyzer:
                     response_format={"type": "json_object"},
                 )
 
-                # Parse the response
-                response_text = response.choices[0].message.content
-                analysis = json.loads(response_text)
+                # Extract content from the response
+                content = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
+
+                # Try to find JSON content in the output
+                json_start = content.find("{")
+                json_end = content.rfind("}") + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_content = content[json_start:json_end]
+                    analysis = json.loads(json_content)
+                else:
+                    analysis = json.loads(content)
 
                 # Return the analysis with metadata
                 return {
