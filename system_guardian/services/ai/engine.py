@@ -7,6 +7,7 @@ import sqlalchemy
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from langchain_litellm.chat_models import ChatLiteLLM
+from litellm import embedding
 from system_guardian.settings import settings
 
 from loguru import logger
@@ -121,26 +122,22 @@ class AIEngine:
                 logger.debug("Embedding cache hit")
                 return cached_result
 
-            # Check if llm client is None
-            if self.llm is None:
-                logger.error("LLM client is None, cannot generate embedding")
-                return [0.0] * 1536  # Default embedding size
-
-            # Generate new embedding
+            # Generate new embedding using LiteLLM
             logger.debug(f"Generating embedding using model: {self.embedding_model}")
-            response = await self.llm.embeddings.create(
+            response = embedding(
                 model=self.embedding_model,
-                input=text,
+                input=[text],
+                api_key=settings.openai_api_key,
             )
-            embedding = response.data[0].embedding
+            embedding_vector = response.data[0]["embedding"]
 
             # Update cache by calling the function (not ideal but works for this case)
             # In a production system, a proper async cache would be better
             self._embedding_cache.cache_clear()  # Clear to avoid growing too much
             self._embedding_cache(cache_key)
-            self._embedding_cache.__wrapped__.__dict__[cache_key] = embedding
+            self._embedding_cache.__wrapped__.__dict__[cache_key] = embedding_vector
 
-            return embedding
+            return embedding_vector
         except Exception as e:
             # Log and track the error
             self._track_metric("embedding_errors")
@@ -160,13 +157,13 @@ class AIEngine:
         min_similarity_score: float = 0.5,
     ) -> List[Dict]:
         """
-        Find similar past incidents using vector similarity.
+        Find similar past incidents using vector similarity and LLM relevance judgment.
 
         :param incident_text: Text to search for similar incidents
         :param limit: Maximum number of results to return
         :param filter_condition: Optional filter condition for the query
-        :param min_similarity_score: Minimum similarity score for returned incidents
-        :return: List of similar incidents with similarity scores
+        :param min_similarity_score: Minimum similarity score for initial filtering
+        :return: List of similar incidents with relevance scores
         """
         start_time = time.time()
         self._track_metric("vector_search_calls")
@@ -182,14 +179,15 @@ class AIEngine:
             # Generate embedding for the query text
             embedding = await self.generate_embedding(incident_text)
 
-            # Search the vector database
+            # Search the vector database with a larger limit to allow for LLM filtering
             logger.debug(
                 f"Searching vector database with limit: {limit*2}, filter: {filter_condition}"
             )
             results = await self.vector_db.search_vectors(
                 collection_name="incident_vectors",
                 query_vector=embedding,
-                limit=limit * 2,  # Request more than needed to account for filtering
+                limit=limit
+                * 2,  # Request more than needed to account for LLM filtering
                 filter_condition=filter_condition,
             )
 
@@ -218,261 +216,103 @@ class AIEngine:
                 ):
                     filtered_results.append(record)
 
-            logger.info(
-                f"Found {len(filtered_results)} similar incidents with similarity score >= {min_similarity_score}"
+            if not filtered_results:
+                logger.info("No incidents found above similarity threshold")
+                return []
+
+            # Use LLM to judge relevance and rank incidents
+            relevance_prompt = f"""
+            You are an expert at analyzing IT incidents and determining their relevance to each other.
+            
+            Current Incident:
+            {incident_text}
+            
+            Please analyze the following incidents and determine how relevant they are to the current incident.
+            Consider:
+            1. Technical similarity (same components, error types, etc.)
+            2. Root cause similarity
+            3. Impact similarity
+            4. Resolution approach similarity
+            
+            For each incident, provide:
+            - relevance_score: A number between 0 and 1 indicating how relevant it is
+            - relevance_reason: A brief explanation of why it's relevant
+            
+            Incidents to analyze:
+            {json.dumps(filtered_results, indent=2)}
+            
+            Return a JSON array with the same incidents, but with added relevance_score and relevance_reason fields.
+            """
+
+            # Call LLM for relevance judgment
+            response = await self.llm.ainvoke(
+                [
+                    {
+                        "role": "system",
+                        "content": "You are an expert at analyzing IT incidents and determining their relevance to each other. Provide your response as a valid JSON array.",
+                    },
+                    {"role": "user", "content": relevance_prompt},
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"},
             )
-            # Return up to the requested limit
-            return filtered_results[:limit]
+
+            # Parse and process LLM response
+            try:
+                # Extract content from response
+                response_content = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
+
+                # Try to find JSON content in the response
+                json_start = response_content.find("{")
+                json_end = response_content.rfind("}") + 1
+
+                if json_start >= 0 and json_end > json_start:
+                    json_str = response_content[json_start:json_end]
+                    relevance_data = json.loads(json_str)
+                else:
+                    raise json.JSONDecodeError(
+                        "No JSON object found in response", response_content, 0
+                    )
+
+                # Extract incidents array from response
+                if isinstance(relevance_data, dict):
+                    incidents = relevance_data.get("incidents", [])
+                else:
+                    incidents = relevance_data
+
+                if not isinstance(incidents, list):
+                    logger.error(
+                        f"Unexpected response format. Expected list but got {type(incidents)}"
+                    )
+                    return filtered_results[:limit]
+
+                # Sort by relevance score and take top results
+                sorted_results = sorted(
+                    incidents,
+                    key=lambda x: float(x.get("relevance_score", 0)),
+                    reverse=True,
+                )[:limit]
+
+                logger.info(
+                    f"Found {len(sorted_results)} relevant incidents after LLM analysis"
+                )
+                return sorted_results
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse LLM relevance response: {str(e)}")
+                # Fall back to similarity-based results
+                return filtered_results[:limit]
+            except Exception as e:
+                logger.error(f"Error processing LLM response: {str(e)}")
+                return filtered_results[:limit]
+
         except Exception as e:
             logger.error(f"Error finding similar incidents: {str(e)}", exc_info=True)
             return []
         finally:
             processing_time = time.time() - start_time
             self._track_metric("total_processing_time", processing_time)
-
-    # Helper method to get incident details
-    async def _get_incident_details(self, db_session, incident_id: int) -> Dict:
-        """
-        Get incident details from the database.
-
-        :param db_session: Database session
-        :param incident_id: ID of the incident
-        :return: Dictionary with incident details or None if not found
-        """
-        from system_guardian.db.models.incidents import Incident, Event, Resolution
-
-        try:
-            # Query the incident
-            incident_query = select(Incident).where(Incident.id == incident_id)
-            result = await db_session.execute(incident_query)
-            incident = result.scalars().first()
-
-            if not incident:
-                logger.warning(f"Incident with ID {incident_id} not found")
-                return None
-
-            # Get all related events
-            events_query = select(Event).where(Event.related_incident_id == incident_id)
-            events_result = await db_session.execute(events_query)
-            related_events = events_result.scalars().all()
-            logger.debug(
-                f"Found {len(related_events)} events for incident {incident_id}"
-            )
-
-            # Get resolution if any
-            resolution_query = select(Resolution).where(
-                Resolution.incident_id == incident_id
-            )
-            resolution_result = await db_session.execute(resolution_query)
-            resolution = resolution_result.scalars().first()
-
-            # Format incident data
-            incident_data = {
-                "id": incident.id,
-                "title": incident.title,
-                "description": incident.description,
-                "severity": incident.severity,
-                "status": incident.status,
-                "source": incident.source,
-                "created_at": incident.created_at.isoformat(),
-                "resolved_at": (
-                    incident.resolved_at.isoformat() if incident.resolved_at else None
-                ),
-                "resolution": resolution.suggestion if resolution else None,
-                "similarity_score": 1.0,  # Perfect match with itself
-                "events": [
-                    {
-                        "id": event.id,
-                        "source": event.source,
-                        "event_type": event.event_type,
-                        "content": event.content,
-                        "created_at": event.created_at.isoformat(),
-                    }
-                    for event in related_events
-                ],
-            }
-
-            return incident_data
-        except Exception as e:
-            logger.error(f"Error getting incident details: {str(e)}", exc_info=True)
-            return None
-
-    # Helper method to generate query text from incident
-    async def _generate_query_text_from_incident(self, incident_data: Dict) -> str:
-        """
-        Generate query text from incident data for vector search.
-
-        :param incident_data: Incident data
-        :return: Query text
-        """
-        # Create a text representation from the incident title and description
-        query_text = f"{incident_data.get('title', '')}"
-        if incident_data.get("description"):
-            query_text += f" {incident_data.get('description', '')}"
-
-        # Add event summaries if available
-        for event in incident_data.get("events", [])[:3]:  # Just use first 3 events
-            if "summary" in event:
-                query_text += f" {event['summary']}"
-
-        # Truncate if too long
-        if len(query_text) > 1000:
-            query_text = query_text[:1000]
-
-        return query_text
-
-    async def find_related_incidents(
-        self,
-        db_session,
-        incident_id: Optional[int] = None,
-        query_text: Optional[str] = None,
-        limit: int = 5,
-        include_resolved: bool = True,
-        min_similarity_score: float = 0.5,
-    ) -> Dict:
-        """
-        Find similar past incidents and provide insights based on them.
-
-        :param db_session: Database session
-        :param incident_id: Optional ID of the incident to find related incidents for
-        :param query_text: Optional text to search for related incidents
-        :param limit: Maximum number of related incidents to return
-        :param include_resolved: Whether to include resolved incidents
-        :param min_similarity_score: Minimum similarity score for related incidents
-        :return: Dict with related incidents, insights, and current incident
-        """
-        from system_guardian.services.ai.incident_similarity import (
-            IncidentSimilarityService,
-        )
-
-        start_time = time.time()
-        logger.info(
-            f"Finding related incidents for incident_id={incident_id}, query_text_provided={bool(query_text)}"
-        )
-
-        try:
-            # Initialize similarity service
-            similarity_service = IncidentSimilarityService(
-                qdrant_client=self.vector_db,
-                openai_client=self.llm,
-            )
-
-            incident_data = None
-            final_query_text = query_text
-
-            # If incident ID is provided, get incident details
-            if incident_id:
-                incident_data = await self._get_incident_details(
-                    db_session, incident_id
-                )
-
-                if not incident_data:
-                    raise ValueError(f"Incident with ID {incident_id} not found")
-
-                # Create query text if not provided
-                if not final_query_text:
-                    final_query_text = await self._generate_query_text_from_incident(
-                        incident_data
-                    )
-
-            if not final_query_text:
-                raise ValueError("Either incident_id or query_text must be provided")
-
-            # Define filter condition based on parameters
-            filter_condition = {}
-            if not include_resolved:
-                filter_condition = {
-                    "must": [
-                        {"key": "status", "match": {"any": ["open", "investigating"]}}
-                    ]
-                }
-                logger.debug("Applied filter to exclude resolved incidents")
-
-            # Find similar incidents
-            logger.debug(f"Searching for similar incidents with limit={limit}")
-            similar_incidents_data = await similarity_service.find_similar_incidents(
-                query_text=final_query_text,
-                limit=limit,
-                filter_condition=filter_condition,
-            )
-
-            # Filter by minimum similarity score
-            similar_incidents_data = [
-                incident
-                for incident in similar_incidents_data
-                if incident.get("similarity_score", 0) >= min_similarity_score
-            ]
-            logger.info(
-                f"Found {len(similar_incidents_data)} similar incidents with score >= {min_similarity_score}"
-            )
-
-            # Convert to standardized format
-            related_incidents = self._standardize_incident_results(
-                similar_incidents_data,
-                current_incident_id=incident_data["id"] if incident_data else None,
-            )
-
-            # Generate insights based on related incidents
-            logger.debug("Generating insights based on related incidents")
-            insights = await self.generate_insights(
-                current_incident=incident_data, related_incidents=related_incidents
-            )
-
-            return {
-                "incidents": related_incidents,
-                "insights": insights,
-                "current_incident": incident_data,
-            }
-        except Exception as e:
-            logger.error(f"Error finding related incidents: {str(e)}", exc_info=True)
-            raise
-        finally:
-            processing_time = time.time() - start_time
-            logger.debug(f"find_related_incidents completed in {processing_time:.2f}s")
-            self._track_metric("total_processing_time", processing_time)
-
-    def _standardize_incident_results(
-        self, incidents: List[Dict], current_incident_id: Optional[int] = None
-    ) -> List[Dict]:
-        """
-        Standardize incident results from the vector database.
-
-        :param incidents: List of incidents from the vector database
-        :param current_incident_id: ID of the current incident to exclude
-        :return: List of standardized incident dictionaries
-        """
-        standardized_incidents = []
-
-        for incident in incidents:
-            # Skip the current incident if it's in the results
-            if current_incident_id and str(current_incident_id) == str(
-                incident.get("incident_id")
-            ):
-                continue
-
-            standardized_incidents.append(
-                {
-                    "id": (
-                        int(incident.get("incident_id"))
-                        if incident.get("incident_id")
-                        else 0
-                    ),
-                    "title": incident.get("title", ""),
-                    "description": incident.get("description", ""),
-                    "severity": incident.get("severity", "medium"),
-                    "status": incident.get("status", "unknown"),
-                    "source": incident.get("source", "unknown"),
-                    "created_at": incident.get(
-                        "created_at", datetime.utcnow().isoformat()
-                    ),
-                    "resolved_at": incident.get("resolved_at"),
-                    "resolution": incident.get("resolution"),
-                    "similarity_score": incident.get("similarity_score", 0),
-                }
-            )
-
-        logger.debug(f"Standardized {len(standardized_incidents)} incident results")
-        return standardized_incidents
 
     async def generate_insights(
         self, current_incident: Optional[Dict], related_incidents: List[Dict]
@@ -529,9 +369,8 @@ class AIEngine:
             logger.debug(
                 f"Calling LLM with model {self.llm_model} to generate insights"
             )
-            response = await self.llm.chat.completions.create(
-                model=self.llm_model,
-                messages=[
+            response = await self.llm.ainvoke(
+                [
                     {
                         "role": "system",
                         "content": "You are an expert at analyzing IT incidents and identifying patterns and insights. Provide your response as a valid JSON object with an 'insights' array.",
@@ -543,7 +382,7 @@ class AIEngine:
             )
 
             # Parse insights from response
-            insights_text = response.choices[0].message.content
+            insights_text = response.content
             insights_data = json.loads(insights_text)
 
             # Convert to standardized format

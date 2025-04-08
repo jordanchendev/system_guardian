@@ -83,7 +83,7 @@ class AIServiceFactory:
                 dependencies.append("engine")
 
         self._service_dependencies[name] = dependencies
-        logger.info(
+        logger.debug(
             f"Registered service class: {name} with dependencies: {dependencies}"
         )
 

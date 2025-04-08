@@ -1,8 +1,7 @@
 """AI Engine API views."""
 
-import json
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from typing import List, Optional
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Path
 from loguru import logger
@@ -18,6 +17,7 @@ from system_guardian.db.models.incidents import Incident, Resolution
 from system_guardian.db.dependencies import get_db_session
 from sqlalchemy.future import select
 from system_guardian.settings import settings
+from system_guardian.services.ai.incident_similarity import IncidentSimilarityService
 
 from .schema import (
     GenerateResolutionRequest,
@@ -355,15 +355,18 @@ async def find_related_incidents(
     query_identifier = request.incident_id or "custom query"
     logger.info(f"Received related incidents request for: {query_identifier}")
 
-    # Initialize AI engine with configuration
+    # Initialize AI engine and similarity service
     ai_engine = AIEngine(vector_db_client=qdrant_client, enable_metrics=True)
+    similarity_service = IncidentSimilarityService(
+        qdrant_client=qdrant_client, ai_engine=ai_engine
+    )
 
     try:
-        # Use the AIEngine with the provided session
+        # Use the IncidentSimilarityService with the provided session
         logger.debug(
-            f"Calling AIEngine for related incidents: limit={request.limit}, include_resolved={request.include_resolved}"
+            f"Calling IncidentSimilarityService for related incidents: limit={request.limit}, include_resolved={request.include_resolved}"
         )
-        result = await ai_engine.find_related_incidents(
+        result = await similarity_service.find_related_incidents(
             db_session=db_session,
             incident_id=request.incident_id,
             query_text=request.query_text,
@@ -390,7 +393,7 @@ async def find_related_incidents(
             ),
         )
     except ValueError as e:
-        # Handle the specific exceptions from AIEngine
+        # Handle the specific exceptions from IncidentSimilarityService
         logger.error(f"Validation error for related incidents request: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -903,7 +906,6 @@ async def perform_root_cause_analysis(
     # Initialize AI engine with appropriate model for root cause analysis
     ai_engine = AIEngine(
         vector_db_client=qdrant_client,
-        llm_client=openai_client,
         llm_model=(
             settings.ai_root_cause_analysis_model
             if settings.ai_allow_advanced_models

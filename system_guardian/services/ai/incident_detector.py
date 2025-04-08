@@ -12,6 +12,7 @@ from sqlalchemy import func, and_, text
 
 from system_guardian.db.models.incidents import Event, Incident
 from system_guardian.services.ai.severity_classifier import SeverityClassifier
+from system_guardian.services.ai.engine import AIEngine
 from system_guardian.services.config import ConfigManager, IncidentDetectionConfig
 from system_guardian.services.ai.incident_similarity import (
     IncidentSimilarityService,
@@ -29,7 +30,7 @@ from langchain.prompts.chat import (
     SystemMessagePromptTemplate,
 )
 from langchain.output_parsers import PydanticOutputParser
-from langchain.pydantic_v1 import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict
 from pydantic import ValidationError
 
 
@@ -50,6 +51,16 @@ class IncidentAnalysis(BaseModel):
         if not 0 <= v <= 1:
             raise ValueError("confidence must be between 0 and 1")
         return v
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "is_incident": True,
+                "confidence": 0.85,
+                "reason": "The event contains critical error messages",
+                "keywords_found": ["error", "critical", "failure"],
+            }
+        }
 
 
 class LLMAnalysis(BaseModel):
@@ -104,6 +115,7 @@ class IncidentDetector:
         llm_client: Optional[AsyncOpenAI] = None,
         llm_model: Optional[str] = None,
         severity_classifier: Optional[SeverityClassifier] = None,
+        ai_engine: Optional[AIEngine] = None,
     ):
         """
         Initialize the incident detector.
@@ -134,6 +146,11 @@ class IncidentDetector:
             # stop_sequence=["\n\n", "</s>"],
             # model_kwargs={"stop": ["\n\n", "</s>"]},
             # custom_llm_provider="together_ai",
+        )
+        self.ai_engine = ai_engine or AIEngine(
+            vector_db_client=get_qdrant_client(),
+            llm_model=self.llm_model,
+            enable_metrics=True,
         )
 
     async def ensure_config_loaded(self) -> IncidentDetectionConfig:
@@ -250,7 +267,13 @@ class IncidentDetector:
 
                 # Create prompt template
                 prompt = PromptTemplate(
-                    template="Analyze the following event and determine if it should be considered an incident.\n{format_instructions}\nEvent: {event}\nKeywords to check: {keywords}\n",
+                    template="""Analyze the following event and determine if it should be considered an incident.
+{format_instructions}
+
+Event: {event}
+Keywords to check: {keywords}
+
+IMPORTANT: Respond with a valid JSON object containing ONLY the required fields (is_incident, confidence, reason, keywords_found). Do not include any example or additional fields.""",
                     input_variables=["event", "keywords"],
                     partial_variables={
                         "format_instructions": self.parser.get_format_instructions()
@@ -263,10 +286,21 @@ class IncidentDetector:
                 )
 
                 # Get LLM response
-                output = await self.llm_client.ainvoke(_input.to_string())
+                output = await self.ai_engine.llm.ainvoke(_input.to_string())
+                logger.warning(f"Output: {output}")
+
+                # Extract content from AIMessage
+                content = output.content if hasattr(output, "content") else str(output)
+
+                # Clean up the content - remove markdown code block if present
+                if content.startswith("```json"):
+                    content = content[7:]  # Remove ```json
+                if content.endswith("```"):
+                    content = content[:-3]  # Remove ```
+                content = content.strip()
 
                 # Parse the output
-                analysis = self.parser.parse(output)
+                analysis = self.parser.parse(content)
 
                 if analysis.is_incident:
                     logger.info(
@@ -384,8 +418,9 @@ class IncidentDetector:
             )
 
             # Call LLM for analysis
-            output = await self.llm_client.ainvoke(_input.to_string())
-
+            # output = await self.llm_client.ainvoke(_input.to_string())
+            output = await self.ai_engine.llm.ainvoke(_input.to_string())
+            logger.warning(f"Output: {output}")
             # Extract content from AIMessage
             content = output.content if hasattr(output, "content") else str(output)
 
@@ -630,7 +665,8 @@ class IncidentDetector:
                 logger.debug(f"Indexing incident #{new_incident.id} in vector database")
                 qdrant_client = get_qdrant_client()
                 similarity_service = IncidentSimilarityService(
-                    qdrant_client=qdrant_client
+                    qdrant_client=qdrant_client,
+                    ai_engine=self.ai_engine,
                 )
 
                 incident_embedding = IncidentEmbedding(

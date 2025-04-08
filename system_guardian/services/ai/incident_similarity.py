@@ -3,10 +3,13 @@
 import hashlib
 import json
 from typing import Any, Dict, List, Optional, Tuple
+import time
+from datetime import datetime
 
 from loguru import logger
 from openai import AsyncOpenAI
 from pydantic import BaseModel
+from sqlalchemy import select
 
 # Use forward imports to avoid circular imports
 from system_guardian.services.vector_db import types
@@ -75,35 +78,6 @@ class IncidentSimilarityService:
             )
         return True
 
-    async def generate_embedding(self, text: str) -> List[float]:
-        """
-        Generate an embedding for the given text.
-
-        :param text: Text to generate embedding for
-        :returns: Vector embedding
-        """
-        try:
-            # If we have an AIEngine, use it for generating embeddings
-            if self.ai_engine:
-                logger.debug(
-                    f"Using AIEngine to generate embedding with model: {self.ai_engine.embedding_model}"
-                )
-                return await self.ai_engine.generate_embedding(text)
-
-            # Fall back to standard OpenAI client
-            logger.debug(
-                f"Using standard OpenAI client to generate embedding with model: {self.embedding_model}"
-            )
-            response = await self.openai.embeddings.create(
-                model=self.embedding_model,
-                input=text,
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            logger.error(f"Failed to generate embedding: {e}")
-            # Return a zero vector as fallback
-            return [0.0] * self.VECTOR_SIZE
-
     def _generate_incident_text(self, incident: IncidentEmbedding) -> str:
         """
         Generate a text representation of an incident for embedding.
@@ -164,8 +138,8 @@ Status: {incident.status}"""
         # Generate text for embedding
         incident_text = self._generate_incident_text(incident)
 
-        # Generate embedding
-        embedding = await self.generate_embedding(incident_text)
+        # Generate embedding using AIEngine
+        embedding = await self.ai_engine.generate_embedding(incident_text)
 
         # Create vector record
         vector_record = types.VectorRecord(
@@ -223,8 +197,8 @@ Status: {incident.status}"""
                 # Fall back to standard search below
 
         # Standard embedding-based search
-        # Generate embedding
-        embedding = await self.generate_embedding(query_text)
+        # Generate embedding using AIEngine
+        embedding = await self.ai_engine.generate_embedding(query_text)
 
         # Search for similar vectors
         results = await self.qdrant.search_vectors(
@@ -260,3 +234,235 @@ Status: {incident.status}"""
             collection_name=self.COLLECTION_NAME,
             vector_ids=[self._generate_id(incident_id)],
         )
+
+    async def find_related_incidents(
+        self,
+        db_session,
+        incident_id: Optional[int] = None,
+        query_text: Optional[str] = None,
+        limit: int = 5,
+        include_resolved: bool = True,
+        min_similarity_score: float = 0.5,
+    ) -> Dict:
+        """
+        Find similar past incidents and provide insights based on them.
+
+        :param db_session: Database session
+        :param incident_id: Optional ID of the incident to find related incidents for
+        :param query_text: Optional text to search for related incidents
+        :param limit: Maximum number of related incidents to return
+        :param include_resolved: Whether to include resolved incidents
+        :param min_similarity_score: Minimum similarity score for related incidents
+        :return: Dict with related incidents, insights, and current incident
+        """
+        start_time = time.time()
+        logger.info(
+            f"Finding related incidents for incident_id={incident_id}, query_text_provided={bool(query_text)}"
+        )
+
+        try:
+            incident_data = None
+            final_query_text = query_text
+
+            # If incident ID is provided, get incident details
+            if incident_id:
+                incident_data = await self._get_incident_details(
+                    db_session, incident_id
+                )
+
+                if not incident_data:
+                    raise ValueError(f"Incident with ID {incident_id} not found")
+
+                # Create query text if not provided
+                if not final_query_text:
+                    final_query_text = await self._generate_query_text_from_incident(
+                        incident_data
+                    )
+
+            if not final_query_text:
+                raise ValueError("Either incident_id or query_text must be provided")
+
+            # Define filter condition based on parameters
+            filter_condition = {}
+            if not include_resolved:
+                filter_condition = {
+                    "must": [
+                        {"key": "status", "match": {"any": ["open", "investigating"]}}
+                    ]
+                }
+                logger.debug("Applied filter to exclude resolved incidents")
+
+            # Find similar incidents
+            logger.debug(f"Searching for similar incidents with limit={limit}")
+            similar_incidents_data = await self.find_similar_incidents(
+                query_text=final_query_text,
+                limit=limit,
+                filter_condition=filter_condition,
+            )
+
+            # Filter by minimum similarity score
+            similar_incidents_data = [
+                incident
+                for incident in similar_incidents_data
+                if incident.get("similarity_score", 0) >= min_similarity_score
+            ]
+            logger.info(
+                f"Found {len(similar_incidents_data)} similar incidents with score >= {min_similarity_score}"
+            )
+
+            # Convert to standardized format
+            related_incidents = self._standardize_incident_results(
+                similar_incidents_data,
+                current_incident_id=incident_data["id"] if incident_data else None,
+            )
+
+            # Generate insights based on related incidents
+            logger.debug("Generating insights based on related incidents")
+            insights = await self.ai_engine.generate_insights(
+                current_incident=incident_data, related_incidents=related_incidents
+            )
+
+            return {
+                "incidents": related_incidents,
+                "insights": insights,
+                "current_incident": incident_data,
+            }
+        except Exception as e:
+            logger.error(f"Error finding related incidents: {str(e)}", exc_info=True)
+            raise
+        finally:
+            processing_time = time.time() - start_time
+            logger.debug(f"find_related_incidents completed in {processing_time:.2f}s")
+            self.ai_engine._track_metric("total_processing_time", processing_time)
+
+    async def _get_incident_details(self, db_session, incident_id: int) -> Dict:
+        """
+        Get incident details from the database.
+
+        :param db_session: Database session
+        :param incident_id: ID of the incident
+        :return: Dictionary with incident details or None if not found
+        """
+        from system_guardian.db.models.incidents import Incident, Event, Resolution
+
+        try:
+            # Query the incident
+            incident_query = select(Incident).where(Incident.id == incident_id)
+            result = await db_session.execute(incident_query)
+            incident = result.scalars().first()
+
+            if not incident:
+                logger.warning(f"Incident with ID {incident_id} not found")
+                return None
+
+            # Get all related events
+            events_query = select(Event).where(Event.related_incident_id == incident_id)
+            events_result = await db_session.execute(events_query)
+            related_events = events_result.scalars().all()
+            logger.debug(
+                f"Found {len(related_events)} events for incident {incident_id}"
+            )
+
+            # Get resolution if any
+            resolution_query = select(Resolution).where(
+                Resolution.incident_id == incident_id
+            )
+            resolution_result = await db_session.execute(resolution_query)
+            resolution = resolution_result.scalars().first()
+
+            # Format incident data
+            incident_data = {
+                "id": incident.id,
+                "title": incident.title,
+                "description": incident.description,
+                "severity": incident.severity,
+                "status": incident.status,
+                "source": incident.source,
+                "created_at": incident.created_at.isoformat(),
+                "resolved_at": (
+                    incident.resolved_at.isoformat() if incident.resolved_at else None
+                ),
+                "resolution": resolution.suggestion if resolution else None,
+                "similarity_score": 1.0,  # Perfect match with itself
+                "events": [
+                    {
+                        "id": event.id,
+                        "source": event.source,
+                        "event_type": event.event_type,
+                        "content": event.content,
+                        "created_at": event.created_at.isoformat(),
+                    }
+                    for event in related_events
+                ],
+            }
+
+            return incident_data
+        except Exception as e:
+            logger.error(f"Error getting incident details: {str(e)}", exc_info=True)
+            return None
+
+    async def _generate_query_text_from_incident(self, incident_data: Dict) -> str:
+        """
+        Generate query text from incident data for vector search.
+
+        :param incident_data: Incident data
+        :return: Query text
+        """
+        # Create a text representation from the incident title and description
+        query_text = f"{incident_data.get('title', '')}"
+        if incident_data.get("description"):
+            query_text += f" {incident_data.get('description', '')}"
+
+        # Add event summaries if available
+        for event in incident_data.get("events", [])[:3]:  # Just use first 3 events
+            if "summary" in event:
+                query_text += f" {event['summary']}"
+
+        # Truncate if too long
+        if len(query_text) > 1000:
+            query_text = query_text[:1000]
+
+        return query_text
+
+    def _standardize_incident_results(
+        self, incidents: List[Dict], current_incident_id: Optional[int] = None
+    ) -> List[Dict]:
+        """
+        Standardize incident results from the vector database.
+
+        :param incidents: List of incidents from the vector database
+        :param current_incident_id: ID of the current incident to exclude
+        :return: List of standardized incident dictionaries
+        """
+        standardized_incidents = []
+
+        for incident in incidents:
+            # Skip the current incident if it's in the results
+            if current_incident_id and str(current_incident_id) == str(
+                incident.get("incident_id")
+            ):
+                continue
+
+            standardized_incidents.append(
+                {
+                    "id": (
+                        int(incident.get("incident_id"))
+                        if incident.get("incident_id")
+                        else 0
+                    ),
+                    "title": incident.get("title", ""),
+                    "description": incident.get("description", ""),
+                    "severity": incident.get("severity", "medium"),
+                    "status": incident.get("status", "unknown"),
+                    "source": incident.get("source", "unknown"),
+                    "created_at": incident.get(
+                        "created_at", datetime.utcnow().isoformat()
+                    ),
+                    "resolved_at": incident.get("resolved_at"),
+                    "resolution": incident.get("resolution"),
+                    "similarity_score": incident.get("similarity_score", 0),
+                }
+            )
+
+        logger.debug(f"Standardized {len(standardized_incidents)} incident results")
+        return standardized_incidents

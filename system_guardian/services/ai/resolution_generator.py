@@ -285,21 +285,22 @@ class ResolutionGenerator(AIServiceBase):
         # Use the specified model or fall back to default
         model_to_use = model or self.ai_engine.llm_model
 
-        # Call the LLM
-        response = await self.ai_engine.llm.chat.completions.create(
-            model=model_to_use,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert IT incident resolver. Provide concise, actionable resolution steps.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=temperature,
-            max_tokens=800,
-        )
+        # Create messages for the LLM
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert IT incident resolver. Provide concise, actionable resolution steps.",
+            },
+            {"role": "user", "content": prompt},
+        ]
 
-        resolution_text = response.choices[0].message.content
+        # Call the LLM using ainvoke
+        response = await self.ai_engine.llm.ainvoke(json.dumps(messages))
+
+        # Extract the content from the response
+        resolution_text = (
+            response.content if hasattr(response, "content") else str(response)
+        )
 
         # Calculate confidence score
         confidence = self._calculate_confidence(
