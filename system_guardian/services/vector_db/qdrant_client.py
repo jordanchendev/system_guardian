@@ -324,12 +324,14 @@ class QdrantClient:
         self,
         collection_name: str,
         texts: List[str],
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> int:
         """
         Insert or update text chunks in the collection.
 
         :param collection_name: Name of the collection
         :param texts: List of text chunks to insert/update
+        :param metadata: Metadata to attach to each text chunk
         :returns: Number of points inserted
         """
         try:
@@ -358,7 +360,7 @@ class QdrantClient:
                 VectorRecord(
                     id=str(uuid.uuid4()),
                     vector=embedding,
-                    metadata={"text": text},
+                    metadata={"text": text, **metadata},
                 )
                 for text, embedding in zip(texts, embeddings)
             ]
@@ -367,7 +369,7 @@ class QdrantClient:
             success = await self.upsert_vectors(collection_name, vectors)
             if not success:
                 raise Exception("Failed to upsert vectors")
-
+            logger.info(f"Successfully upserted vectors to {collection_name}")
             return len(vectors)
         except Exception as e:
             logger.error(f"Failed to upsert texts to {collection_name}: {e}")

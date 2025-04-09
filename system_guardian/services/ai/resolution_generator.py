@@ -14,8 +14,8 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from system_guardian.db.models.incidents import Incident, Event, Resolution
 from system_guardian.services.ai.service_base import AIServiceBase
+from system_guardian.settings import settings
 
 
 class ResolutionGenerator(AIServiceBase):
@@ -27,7 +27,7 @@ class ResolutionGenerator(AIServiceBase):
     """
 
     # Name of the knowledge collection
-    KNOWLEDGE_COLLECTION_NAME = "system_knowledge"
+    KNOWLEDGE_COLLECTION_NAME = settings.qdrant_knowledge_collection_name
 
     def __init__(
         self,
@@ -226,7 +226,11 @@ class ResolutionGenerator(AIServiceBase):
             knowledge_items = []
             for result in knowledge_results:
                 if hasattr(result, "metadata") and "text" in result.metadata:
-                    knowledge_items.append(result.metadata["text"])
+                    # knowledge_items.append(result.metadata["text"])
+                    knowledge_items.append(
+                        f"""File Name: {result.metadata["file_name"]}\nCreated at: {result.metadata["created_at"]}\nText: {result.metadata["text"]}
+                        """
+                    )
 
             # Update metrics
             self._track_metric("knowledge_items_used", len(knowledge_items))
@@ -385,15 +389,15 @@ Here are similar incidents that were resolved in the past:
         prompt += """
 Based on the incident details, relevant knowledge, and similar past incidents, please provide:
 
-1. A concise resolution suggestion with clear, actionable steps
+1. A concise resolution suggestion with clear, actionable steps. **If you use information from the 'Relevant Knowledge' section, mention the corresponding 'File Name' as a reference in your steps.**
 2. Root cause analysis (if possible)
 3. Any preventive measures to avoid similar incidents in the future
 
 Format your response as follows:
 
 ## Resolution Steps:
-1. [First step]
-2. [Second step]
+1. [First step] (Reference: [File Name if applicable])
+2. [Second step] (Reference: [File Name if applicable])
 ...
 
 ## Root Cause:

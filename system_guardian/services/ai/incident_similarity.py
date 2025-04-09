@@ -34,7 +34,7 @@ class IncidentSimilarityService:
     """Service for finding similar incidents using vector embeddings."""
 
     # Collection name for incident vectors
-    COLLECTION_NAME = "incident_vectors"
+    COLLECTION_NAME = settings.qdrant_incidents_collection_name
     # Vector size for OpenAI embeddings (text-embedding-3-small)
     VECTOR_SIZE = 1536
 

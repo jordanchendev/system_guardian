@@ -184,7 +184,7 @@ class AIEngine:
                 f"Searching vector database with limit: {limit*2}, filter: {filter_condition}"
             )
             results = await self.vector_db.search_vectors(
-                collection_name="incident_vectors",
+                collection_name=settings.qdrant_incidents_collection_name,
                 query_vector=embedding,
                 limit=limit
                 * 2,  # Request more than needed to account for LLM filtering

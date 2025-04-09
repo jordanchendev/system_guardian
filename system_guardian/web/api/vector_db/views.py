@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from datetime import datetime
 
 from system_guardian.services.vector_db.qdrant_client import QdrantClient
 from system_guardian.services.vector_db.dependencies import get_qdrant_dependency
@@ -21,12 +22,13 @@ from system_guardian.web.api.vector_db.schema import (
     KnowledgeUploadResponse,
     SyncIncidentsResponse,
 )
+from system_guardian.settings import settings
 
 router = APIRouter()
 
 # Constants for knowledge base
-KNOWLEDGE_COLLECTION_NAME = "system_knowledge"
-INCIDENTS_COLLECTION_NAME = "incident_vectors"
+KNOWLEDGE_COLLECTION_NAME = settings.qdrant_knowledge_collection_name
+INCIDENTS_COLLECTION_NAME = settings.qdrant_incidents_collection_name
 VECTOR_SIZE = 1536  # OpenAI embedding dimension
 DISTANCE_METRIC = "Cosine"
 
@@ -160,10 +162,14 @@ async def upload_knowledge(
     content = await file.read()
     text_content = content.decode("utf-8").strip()
 
-    # Upload the entire content as one piece to Qdrant
+    # Add metadata with file name and creation time
+    metadata = {"file_name": file.filename, "created_at": datetime.now().isoformat()}
+    # Upload the entire content as one piece to Qdrant with metadata
     try:
         points_count = await qdrant_client.upsert_texts(
-            collection_name=KNOWLEDGE_COLLECTION_NAME, texts=[text_content]
+            collection_name=KNOWLEDGE_COLLECTION_NAME,
+            texts=[text_content],
+            metadata=metadata,
         )
 
         return KnowledgeUploadResponse(

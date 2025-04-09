@@ -88,8 +88,8 @@ async def _initialize_qdrant_collections(qdrant_client) -> None:  # pragma: no c
 
     # Standard collection names used in the application
     COLLECTIONS = {
-        "system_knowledge": 1536,  # OpenAI embedding dimension
-        "incidents": 1536,  # OpenAI embedding dimension
+        settings.qdrant_knowledge_collection_name: 1536,  # OpenAI embedding dimension
+        settings.qdrant_incidents_collection_name: 1536,  # OpenAI embedding dimension
     }
 
     try:
