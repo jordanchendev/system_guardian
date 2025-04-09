@@ -16,6 +16,7 @@ from sqlalchemy.future import select
 
 from system_guardian.services.ai.service_base import AIServiceBase
 from system_guardian.settings import settings
+from system_guardian.services.vector_db.qdrant_client import get_qdrant_client
 
 
 class ResolutionGenerator(AIServiceBase):
@@ -112,6 +113,13 @@ class ResolutionGenerator(AIServiceBase):
                         "generated_at": existing_resolution.generated_at.isoformat(),
                         "is_reused": True,
                     }
+            else:
+                # If force_regenerate is True, check if resolution exists to update it
+                existing_query = select(Resolution).where(
+                    Resolution.incident_id == incident_id
+                )
+                existing_result = await session.execute(existing_query)
+                existing_resolution = existing_result.scalars().first()
 
             # Get incident details
             incident_query = select(Incident).where(Incident.id == incident_id)
@@ -145,28 +153,46 @@ class ResolutionGenerator(AIServiceBase):
                     self._track_metric("low_confidence_resolutions")
 
                 # Store the resolution
-                resolution = Resolution(
-                    incident_id=incident_id,
-                    suggestion=resolution_text,
-                    confidence=confidence,
-                    is_applied=False,
-                    generated_at=datetime.utcnow(),
-                )
+                if force_regenerate and existing_resolution:
+                    # Update existing resolution
+                    existing_resolution.suggestion = resolution_text
+                    existing_resolution.confidence = confidence
+                    existing_resolution.generated_at = datetime.utcnow()
+                    logger.info(
+                        f"Updated existing resolution for incident {incident_id}"
+                    )
+                else:
+                    # Create new resolution
+                    resolution = Resolution(
+                        incident_id=incident_id,
+                        suggestion=resolution_text,
+                        confidence=confidence,
+                        is_applied=False,
+                        generated_at=datetime.utcnow(),
+                    )
+                    session.add(resolution)
 
-                session.add(resolution)
                 await session.commit()
 
                 self._track_metric("resolutions_generated")
                 logger.info(
-                    f"Generated resolution for incident {incident_id} with confidence {confidence:.2f}"
+                    f"{'Updated' if force_regenerate and existing_resolution else 'Generated'} resolution for incident {incident_id} with confidence {confidence:.2f}"
                 )
 
                 return {
-                    "resolution_id": resolution.id,
+                    "resolution_id": (
+                        existing_resolution.id
+                        if force_regenerate and existing_resolution
+                        else resolution.id
+                    ),
                     "resolution_text": resolution_text,
                     "confidence": confidence,
                     "incident_id": incident_id,
-                    "generated_at": resolution.generated_at.isoformat(),
+                    "generated_at": (
+                        existing_resolution.generated_at
+                        if force_regenerate and existing_resolution
+                        else resolution.generated_at
+                    ).isoformat(),
                     "model_used": model or self.ai_engine.llm_model,
                     "similar_incidents_count": len(similar_incidents),
                     "is_reused": False,
@@ -181,19 +207,59 @@ class ResolutionGenerator(AIServiceBase):
 
     async def _find_similar_incidents(self, incident_text: str) -> List[Dict]:
         """
-        Find similar incidents using the AI engine.
+        Find similar incidents using the vector database.
 
         :param incident_text: Text representation of the incident
         :returns: List of similar incidents with similarity scores
         """
         try:
-            similar_incidents = await self.ai_engine.find_similar_incidents(
-                incident_text=incident_text,
+            # 1. Generate embedding using AI Engine
+            embedding = await self.ai_engine.generate_embedding(incident_text)
+
+            # 2. Get direct reference to Qdrant client
+            qdrant_client = get_qdrant_client()
+
+            # 3. Define filter for resolved incidents only
+            filter_condition = {
+                "must": [{"key": "status", "match": {"any": ["resolved"]}}]
+            }
+
+            # 4. Search vectors directly using Qdrant client
+            logger.debug(
+                f"Searching for similar incidents in Qdrant collection: {settings.qdrant_incidents_collection_name}"
+            )
+            vector_records = await qdrant_client.search_vectors(
+                collection_name=settings.qdrant_incidents_collection_name,
+                query_vector=embedding,
                 limit=3,
-                filter_condition={
-                    "must": [{"key": "status", "match": {"any": ["resolved"]}}]
-                },
-                min_similarity_score=0.6,
+                # filter_condition=filter_condition,
+            )
+
+            # 5. Convert vector records to standard incident format
+            similar_incidents = []
+            for record in vector_records:
+                if (
+                    hasattr(record, "score")
+                    and record.score is not None
+                    and record.score >= 0.6
+                ):
+                    incident_dict = {
+                        "incident_id": record.metadata.get("incident_id", ""),
+                        "id": record.metadata.get("incident_id", ""),
+                        "title": record.metadata.get("title", ""),
+                        "description": record.metadata.get("description", ""),
+                        "severity": record.metadata.get("severity", ""),
+                        "status": record.metadata.get("status", ""),
+                        "source": record.metadata.get("source", ""),
+                        "created_at": record.metadata.get("created_at", ""),
+                        "resolved_at": record.metadata.get("resolved_at", ""),
+                        "resolution": record.metadata.get("resolution", ""),
+                        "similarity_score": record.score,
+                    }
+                    similar_incidents.append(incident_dict)
+
+            logger.info(
+                f"Found {len(similar_incidents)} similar incidents with minimum similarity score of 0.6"
             )
             return similar_incidents
         except Exception as e:
