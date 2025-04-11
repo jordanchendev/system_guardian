@@ -8,6 +8,16 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, and_, desc
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+)
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field, validator, ConfigDict
+from pydantic import ValidationError
 
 from system_guardian.db.models.incidents import Incident, Event, Resolution
 from system_guardian.services.ai.engine import AIEngine
@@ -38,6 +48,11 @@ class ReportGenerator:
         """
         self.db_session_factory = db_session_factory
         self.ai_engine = ai_engine
+        self.llm_model = (
+            settings.ai_report_generation_model
+            if settings.ai_allow_advanced_models
+            else settings.openai_completion_model
+        )
 
     async def generate_incident_report(
         self,
@@ -146,23 +161,14 @@ class ReportGenerator:
 
             # Generate the report using AI
             try:
-                # Use specialized model for report generation
-                model = (
-                    settings.ai_report_generation_model
-                    if settings.ai_allow_advanced_models
-                    else settings.openai_completion_model
-                )
-
-                logger.info(f"Using AI model {model} for incident report generation")
-
-                # Build the system prompt based on the requested format
-                system_prompt = "You are an incident report specialist."
+                # Prepare system message and prompt
+                system_message = "You are an incident report specialist."
                 if format == ReportFormat.MARKDOWN:
-                    system_prompt += " Generate reports in well-formatted Markdown with proper headings, lists, and formatting."
+                    system_message += " Generate reports in well-formatted Markdown with proper headings, lists, and formatting."
                 elif format == ReportFormat.HTML:
-                    system_prompt += " Generate reports in clean HTML with proper headings, lists, and minimal but effective styling."
+                    system_message += " Generate reports in clean HTML with proper headings, lists, and minimal but effective styling."
 
-                # Prepare the AI prompt
+                # Create a prompt with all necessary information
                 prompt = f"""
                 Generate a comprehensive incident report for the following incident:
                 
@@ -183,7 +189,6 @@ class ReportGenerator:
                 5. Resolution status and steps taken
                 6. Lessons learned
                 7. Recommendations for preventing similar incidents
-                
                 """
 
                 # Add format-specific instructions
@@ -209,49 +214,70 @@ class ReportGenerator:
                     Format your report as clean HTML with proper headings, paragraphs, lists, and minimal inline CSS for readability.
                     """
 
-                # Set the response format based on the requested output format
+                # Set up response format if needed
                 response_format = (
                     {"type": "json_object"} if format == ReportFormat.JSON else None
                 )
 
-                # Get the appropriate temperature - use a slightly higher temperature for narrative formats
+                # Set the appropriate temperature
                 temperature = settings.ai_default_temperature
                 if format in [ReportFormat.MARKDOWN, ReportFormat.HTML]:
                     temperature = min(settings.ai_default_temperature + 0.1, 0.7)
 
-                # Generate the report
-                response = await self.ai_engine.llm.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
+                logger.debug(
+                    f"Calling LLM with model {self.llm_model} to generate incident report"
+                )
+
+                # Call the LLM directly through the AI engine
+                response = await self.ai_engine.llm.ainvoke(
+                    [
+                        {"role": "system", "content": system_message},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=temperature,
                     response_format=response_format,
                 )
 
-                # Get the report content
-                report_content = response.choices[0].message.content
+                # Extract content from the response
+                content = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
 
                 # Process the report content based on format
                 if format == ReportFormat.JSON:
-                    report_data = json.loads(report_content)
-                    # Add metadata
-                    report_data["metadata"] = {
-                        "incident_id": incident_id,
-                        "generated_at": datetime.utcnow().isoformat(),
-                        "model_used": model,
-                        "format": format,
-                    }
-                    return report_data
+                    try:
+                        # Try to find JSON content in the output
+                        json_start = content.find("{")
+                        json_end = content.rfind("}") + 1
+                        if json_start >= 0 and json_end > json_start:
+                            json_content = content[json_start:json_end]
+                            report_data = json.loads(json_content)
+                        else:
+                            report_data = json.loads(content)
+
+                        # Add metadata
+                        report_data["metadata"] = {
+                            "incident_id": incident_id,
+                            "generated_at": datetime.utcnow().isoformat(),
+                            "model_used": self.llm_model,
+                            "format": format,
+                        }
+                        return report_data
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON response: {e}")
+                        logger.error(f"Raw output was: {content}")
+                        return {
+                            "error": "Failed to generate valid JSON report",
+                            "raw_response": content[:500],  # Truncate long responses
+                        }
                 else:
                     # For Markdown and HTML, return the raw content with metadata
                     return {
-                        "content": report_content,
+                        "content": content,
                         "metadata": {
                             "incident_id": incident_id,
                             "generated_at": datetime.utcnow().isoformat(),
-                            "model_used": model,
+                            "model_used": self.llm_model,
                             "format": format,
                         },
                     }
@@ -379,21 +405,12 @@ class ReportGenerator:
 
             # Generate the report using AI
             try:
-                # Use specialized model for report generation
-                model = (
-                    settings.ai_report_generation_model
-                    if settings.ai_allow_advanced_models
-                    else settings.openai_completion_model
-                )
-
-                logger.info(f"Using AI model {model} for summary report generation")
-
-                # Build the system prompt based on the requested format
-                system_prompt = "You are a system incident report specialist."
+                # Prepare system message
+                system_message = "You are a system incident report specialist."
                 if format == ReportFormat.MARKDOWN:
-                    system_prompt += " Generate reports in well-formatted Markdown with proper headings, lists, and formatting."
+                    system_message += " Generate reports in well-formatted Markdown with proper headings, lists, and formatting."
                 elif format == ReportFormat.HTML:
-                    system_prompt += " Generate reports in clean HTML with proper headings, lists, and minimal but effective styling."
+                    system_message += " Generate reports in clean HTML with proper headings, lists, and minimal but effective styling."
 
                 # Prepare the AI prompt
                 prompt = f"""
@@ -473,40 +490,61 @@ class ReportGenerator:
                 if format in [ReportFormat.MARKDOWN, ReportFormat.HTML]:
                     temperature = min(settings.ai_default_temperature + 0.1, 0.7)
 
+                logger.debug(
+                    f"Calling LLM with model {self.llm_model} to generate summary report"
+                )
+
                 # Generate the report
-                response = await self.ai_engine.llm.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
+                response = await self.ai_engine.llm.ainvoke(
+                    [
+                        {"role": "system", "content": system_message},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=temperature,
                     response_format=response_format,
                 )
 
-                # Get the report content
-                report_content = response.choices[0].message.content
+                # Extract content from the response
+                content = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
 
                 # Process the report content based on format
                 if format == ReportFormat.JSON:
-                    report_data = json.loads(report_content)
-                    # Add metadata
-                    report_data["metadata"] = {
-                        "time_range_days": time_range_days,
-                        "generated_at": datetime.utcnow().isoformat(),
-                        "model_used": model,
-                        "format": format,
-                        "total_incidents": len(incidents),
-                    }
-                    return report_data
+                    try:
+                        # Try to find JSON content in the output
+                        json_start = content.find("{")
+                        json_end = content.rfind("}") + 1
+                        if json_start >= 0 and json_end > json_start:
+                            json_content = content[json_start:json_end]
+                            report_data = json.loads(json_content)
+                        else:
+                            report_data = json.loads(content)
+
+                        # Add metadata
+                        report_data["metadata"] = {
+                            "time_range_days": time_range_days,
+                            "generated_at": datetime.utcnow().isoformat(),
+                            "model_used": self.llm_model,
+                            "format": format,
+                            "total_incidents": len(incidents),
+                        }
+                        return report_data
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON response: {e}")
+                        logger.error(f"Raw output was: {content}")
+                        return {
+                            "error": "Failed to generate valid JSON report",
+                            "raw_response": content[:500],  # Truncate long responses
+                        }
                 else:
                     # For Markdown and HTML, return the raw content with metadata
                     return {
-                        "content": report_content,
+                        "content": content,
                         "metadata": {
                             "time_range_days": time_range_days,
                             "generated_at": datetime.utcnow().isoformat(),
-                            "model_used": model,
+                            "model_used": self.llm_model,
                             "format": format,
                             "total_incidents": len(incidents),
                         },
@@ -614,21 +652,12 @@ class ReportGenerator:
 
             # Generate recommendations using AI
             try:
-                # Use specialized model for recommendations
-                model = (
-                    settings.ai_resolution_generation_model
-                    if settings.ai_allow_advanced_models
-                    else settings.openai_completion_model
-                )
-
-                logger.info(f"Using AI model {model} for operational recommendations")
-
-                # Build the system prompt based on the requested format
-                system_prompt = "You are an expert in IT operations and incident management, specializing in providing actionable recommendations for improving system reliability."
+                # Prepare system message
+                system_message = "You are an expert in IT operations and incident management, specializing in providing actionable recommendations for improving system reliability."
                 if format == ReportFormat.MARKDOWN:
-                    system_prompt += " Generate reports in well-formatted Markdown with proper headings, lists, and formatting."
+                    system_message += " Generate reports in well-formatted Markdown with proper headings, lists, and formatting."
                 elif format == ReportFormat.HTML:
-                    system_prompt += " Generate reports in clean HTML with proper headings, lists, and minimal but effective styling."
+                    system_message += " Generate reports in clean HTML with proper headings, lists, and minimal but effective styling."
 
                 # Prepare the AI prompt
                 incident_sources = list(source_counts.keys())
@@ -686,40 +715,61 @@ class ReportGenerator:
                     {"type": "json_object"} if format == ReportFormat.JSON else None
                 )
 
+                logger.debug(
+                    f"Calling LLM with model {self.llm_model} to generate operational recommendations"
+                )
+
                 # Generate the recommendations
-                response = await self.ai_engine.llm.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
+                response = await self.ai_engine.llm.ainvoke(
+                    [
+                        {"role": "system", "content": system_message},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=settings.ai_default_temperature,
                     response_format=response_format,
                 )
 
-                # Get the recommendations content
-                recommendations_content = response.choices[0].message.content
+                # Extract content from the response
+                content = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
 
                 # Process based on format
                 if format == ReportFormat.JSON:
-                    recommendations_data = json.loads(recommendations_content)
-                    # Add metadata
-                    recommendations_data["metadata"] = {
-                        "time_range_days": time_range_days,
-                        "generated_at": datetime.utcnow().isoformat(),
-                        "model_used": model,
-                        "format": format,
-                        "analyzed_incidents": len(incidents),
-                    }
-                    return recommendations_data
+                    try:
+                        # Try to find JSON content in the output
+                        json_start = content.find("{")
+                        json_end = content.rfind("}") + 1
+                        if json_start >= 0 and json_end > json_start:
+                            json_content = content[json_start:json_end]
+                            recommendations_data = json.loads(json_content)
+                        else:
+                            recommendations_data = json.loads(content)
+
+                        # Add metadata
+                        recommendations_data["metadata"] = {
+                            "time_range_days": time_range_days,
+                            "generated_at": datetime.utcnow().isoformat(),
+                            "model_used": self.llm_model,
+                            "format": format,
+                            "analyzed_incidents": len(incidents),
+                        }
+                        return recommendations_data
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON response: {e}")
+                        logger.error(f"Raw output was: {content}")
+                        return {
+                            "error": "Failed to generate valid JSON recommendations",
+                            "raw_response": content[:500],  # Truncate long responses
+                        }
                 else:
                     # For Markdown and HTML, return the raw content with metadata
                     return {
-                        "content": recommendations_content,
+                        "content": content,
                         "metadata": {
                             "time_range_days": time_range_days,
                             "generated_at": datetime.utcnow().isoformat(),
-                            "model_used": model,
+                            "model_used": self.llm_model,
                             "format": format,
                             "analyzed_incidents": len(incidents),
                         },

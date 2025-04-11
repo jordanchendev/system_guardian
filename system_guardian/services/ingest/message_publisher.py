@@ -349,8 +349,13 @@ class MessagePublisher:
         """
         tasks = []
 
-        # Add auto_detect_incident flag to the event
-        event_message.auto_detect_incident = auto_detect_incident
+        # Add auto_detect_incident to raw_payload
+        if isinstance(event_message.raw_payload, dict):
+            event_message.raw_payload["auto_detect_incident"] = auto_detect_incident
+        else:
+            logger.warning(
+                "raw_payload is not a dictionary, cannot add auto_detect_incident flag"
+            )
 
         logger.info(
             f"Publishing event from {event_message.source} with auto_detect_incident={auto_detect_incident}"

@@ -97,6 +97,10 @@ class Settings(BaseSettings):
         0.7  # Higher temperature for tasks requiring creativity
     )
 
+    # Qdrant collection names
+    qdrant_knowledge_collection_name: str = "system_knowledge"
+    qdrant_incidents_collection_name: str = "incidents"
+
     # Slack settings
     slack_enabled: bool = os.getenv("SYSTEM_GUARDIAN_SLACK_ENABLED", False)
     slack_bot_token: Optional[str] = os.getenv("SYSTEM_GUARDIAN_SLACK_BOT_TOKEN")

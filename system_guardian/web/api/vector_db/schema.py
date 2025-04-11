@@ -34,3 +34,12 @@ class KnowledgeUploadResponse(BaseModel):
         ..., description="Name of the collection where knowledge was uploaded"
     )
     points_count: int = Field(..., description="Number of knowledge points uploaded")
+
+
+class SyncIncidentsResponse(BaseModel):
+    """Response model for incident sync operation."""
+
+    success: bool
+    total_incidents: int
+    synced_count: int
+    message: str

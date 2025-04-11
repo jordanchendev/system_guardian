@@ -12,6 +12,7 @@ from sqlalchemy import func, and_, text
 
 from system_guardian.db.models.incidents import Event, Incident
 from system_guardian.services.ai.severity_classifier import SeverityClassifier
+from system_guardian.services.ai.engine import AIEngine
 from system_guardian.services.config import ConfigManager, IncidentDetectionConfig
 from system_guardian.services.ai.incident_similarity import (
     IncidentSimilarityService,
@@ -20,6 +21,89 @@ from system_guardian.services.ai.incident_similarity import (
 from system_guardian.services.vector_db.qdrant_client import get_qdrant_client
 from system_guardian.settings import settings
 from openai import AsyncOpenAI
+from langchain_litellm.chat_models import ChatLiteLLM
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+)
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field, validator, ConfigDict
+from pydantic import ValidationError
+
+
+class IncidentAnalysis(BaseModel):
+    is_incident: bool = Field(
+        description="Whether the event should be considered an incident"
+    )
+    confidence: float = Field(
+        description="Confidence level of the analysis (0.0 to 1.0)"
+    )
+    reason: str = Field(description="Explanation of why this is or isn't an incident")
+    keywords_found: List[str] = Field(
+        description="List of keywords or concepts found in the event"
+    )
+
+    @validator("confidence")
+    def confidence_must_be_between_0_and_1(cls, v):
+        if not 0 <= v <= 1:
+            raise ValueError("confidence must be between 0 and 1")
+        return v
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "is_incident": True,
+                "confidence": 0.85,
+                "reason": "The event contains critical error messages",
+                "keywords_found": ["error", "critical", "failure"],
+            }
+        }
+
+
+class LLMAnalysis(BaseModel):
+    is_incident: bool = Field(
+        description="Whether the event should be considered an incident"
+    )
+    confidence: float = Field(
+        description="Confidence level of the analysis (0.0 to 1.0)"
+    )
+    severity: str = Field(
+        description="Severity level: 'low', 'medium', 'high', or 'critical'"
+    )
+    reasoning: str = Field(description="Detailed explanation of the analysis")
+    recommended_actions: List[str] = Field(
+        description="List of recommended actions to take"
+    )
+
+    @validator("confidence")
+    def confidence_must_be_between_0_and_1(cls, v):
+        if not 0 <= v <= 1:
+            raise ValueError("confidence must be between 0 and 1")
+        return v
+
+    @validator("severity")
+    def severity_must_be_valid(cls, v):
+        valid_severities = ["low", "medium", "high", "critical"]
+        if v.lower() not in valid_severities:
+            raise ValueError(f"severity must be one of {valid_severities}")
+        return v.lower()
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "is_incident": True,
+                "confidence": 0.85,
+                "severity": "high",
+                "reasoning": "The event indicates a critical system failure that requires immediate attention",
+                "recommended_actions": [
+                    "Restart the affected service",
+                    "Check system logs",
+                ],
+            }
+        }
 
 
 class IncidentDetector:
@@ -31,6 +115,7 @@ class IncidentDetector:
         llm_client: Optional[AsyncOpenAI] = None,
         llm_model: Optional[str] = None,
         severity_classifier: Optional[SeverityClassifier] = None,
+        ai_engine: Optional[AIEngine] = None,
     ):
         """
         Initialize the incident detector.
@@ -43,7 +128,6 @@ class IncidentDetector:
         self.config_manager = config_manager
         self.detection_rules = {}
         self.config_loaded = False
-        self.llm_client = llm_client or AsyncOpenAI(api_key=settings.openai_api_key)
         self.llm_model = llm_model or (
             settings.ai_incident_detection_model
             if settings.ai_allow_advanced_models
@@ -51,6 +135,23 @@ class IncidentDetector:
         )
         self.severity_classifier = severity_classifier or SeverityClassifier()
         self._last_analysis = None
+
+        # Initialize LiteLLM with Pydantic output parser
+        self.parser = PydanticOutputParser(pydantic_object=IncidentAnalysis)
+        self.llm_client = ChatLiteLLM(
+            model=self.llm_model,
+            api_key=settings.openai_api_key,
+            # max_tokens=2048,
+            # temperature=0.01,
+            # stop_sequence=["\n\n", "</s>"],
+            # model_kwargs={"stop": ["\n\n", "</s>"]},
+            # custom_llm_provider="together_ai",
+        )
+        self.ai_engine = ai_engine or AIEngine(
+            vector_db_client=get_qdrant_client(),
+            llm_model=self.llm_model,
+            enable_metrics=True,
+        )
 
     async def ensure_config_loaded(self) -> IncidentDetectionConfig:
         """
@@ -164,36 +265,47 @@ class IncidentDetector:
                 keywords_text = ", ".join(keywords)
                 query_text = f"Event: {text_content}\n\nDoes this event contain any of these keywords or concepts: {keywords_text}?"
 
-                # Use LLM to determine if there's a match
-                response = await self.llm_client.chat.completions.create(
-                    model=self.llm_model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an incident detection assistant that helps identify if an event contains keywords or concepts that indicate an incident.",
-                        },
-                        {"role": "user", "content": query_text},
-                    ],
-                    temperature=0.1,
-                    max_tokens=100,
+                # Create prompt template
+                prompt = PromptTemplate(
+                    template="""Analyze the following event and determine if it should be considered an incident.
+{format_instructions}
+
+Event: {event}
+Keywords to check: {keywords}
+
+IMPORTANT: Respond with a valid JSON object containing ONLY the required fields (is_incident, confidence, reason, keywords_found). Do not include any example or additional fields.""",
+                    input_variables=["event", "keywords"],
+                    partial_variables={
+                        "format_instructions": self.parser.get_format_instructions()
+                    },
                 )
 
-                response_text = response.choices[0].message.content.lower()
-                has_semantic_match = any(
-                    phrase in response_text
-                    for phrase in [
-                        "yes",
-                        "match",
-                        "contains",
-                        "found",
-                        "present",
-                        "detected",
-                    ]
+                # Format the prompt
+                _input = prompt.format_prompt(
+                    event=text_content, keywords=keywords_text
                 )
 
-                if has_semantic_match:
+                # Get LLM response
+                output = await self.ai_engine.llm.ainvoke(_input.to_string())
+                logger.warning(f"Output: {output}")
+
+                # Extract content from AIMessage
+                content = output.content if hasattr(output, "content") else str(output)
+
+                # Clean up the content - remove markdown code block if present
+                if content.startswith("```json"):
+                    content = content[7:]  # Remove ```json
+                if content.endswith("```"):
+                    content = content[:-3]  # Remove ```
+                content = content.strip()
+
+                # Parse the output
+                analysis = self.parser.parse(content)
+
+                if analysis.is_incident:
                     logger.info(
-                        f"LLM-enhanced keyword analysis found semantic match in {source}/{event_type} event"
+                        f"LLM-enhanced keyword analysis found semantic match in {source}/{event_type} event. "
+                        f"Confidence: {analysis.confidence:.2f}, Reason: {analysis.reason}"
                     )
                     return True
 
@@ -251,48 +363,93 @@ class IncidentDetector:
         :returns: Analysis result with decision and explanation
         """
         try:
-            # Prepare the prompt
-            prompt = f"""
-            Analyze this event and determine if it should be considered a system incident that requires attention.
-            
-            Event Details:
-            - Source: {source}
-            - Event Type: {event_type}
-            - Payload: {payload}
-            
-            Consider the following factors:
-            1. Severity of the event
-            2. Potential impact on system operations
-            3. Whether immediate action is required
-            4. Historical context (if similar events typically indicate problems)
-            
-            Return your analysis as a JSON object with the following structure:
-            {{
-                "is_incident": boolean,
-                "confidence": float,  # 0.0 to 1.0
-                "severity": string,  # "low", "medium", "high", or "critical"
-                "reasoning": string,
-                "recommended_actions": [string]
-            }}
-            """
+            # Initialize parser for structured output
+            parser = PydanticOutputParser(pydantic_object=LLMAnalysis)
 
-            # Call LLM for analysis
-            response = await self.llm_client.chat.completions.create(
-                model=self.llm_model,
+            # Prepare the prompt
+            prompt = ChatPromptTemplate(
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert system incident analyzer. Your task is to determine if events should be classified as incidents requiring attention.",
-                    },
-                    {"role": "user", "content": prompt},
+                    SystemMessagePromptTemplate.from_template(
+                        """You are an expert system incident analyzer. Your task is to determine if events should be classified as incidents requiring attention.
+                        
+                        IMPORTANT: You must respond with a valid JSON object only. Do not include any additional text, explanations, or markdown formatting."""
+                    ),
+                    HumanMessagePromptTemplate.from_template(
+                        """Analyze this event and determine if it should be considered a system incident that requires attention.
+                        
+                        Event Details:
+                        - Source: {source}
+                        - Event Type: {event_type}
+                        - Payload: {payload}
+                        
+                        Consider the following factors:
+                        1. Severity of the event
+                        2. Potential impact on system operations
+                        3. Whether immediate action is required
+                        4. Historical context (if similar events typically indicate problems)
+                        
+                        You must respond with a valid JSON object in the following format:
+                        {{
+                            "is_incident": boolean,
+                            "confidence": float,  # 0.0 to 1.0
+                            "severity": string,  # "low", "medium", "high", or "critical"
+                            "reasoning": string,
+                            "recommended_actions": [string]
+                        }}
+                        
+                        Example response:
+                        {{
+                            "is_incident": true,
+                            "confidence": 0.85,
+                            "severity": "high",
+                            "reasoning": "The event indicates a critical system failure",
+                            "recommended_actions": ["Restart service", "Check logs"]
+                        }}"""
+                    ),
                 ],
-                temperature=0.2,
-                response_format={"type": "json_object"},
+                input_variables=["source", "event_type", "payload"],
             )
 
-            # Parse response
-            analysis = response.choices[0].message.content
-            return json.loads(analysis)
+            # Format the prompt
+            _input = prompt.format_prompt(
+                source=source,
+                event_type=event_type,
+                payload=json.dumps(payload, indent=2),
+            )
+
+            # Call LLM for analysis
+            # output = await self.llm_client.ainvoke(_input.to_string())
+            output = await self.ai_engine.llm.ainvoke(_input.to_string())
+            logger.warning(f"Output: {output}")
+            # Extract content from AIMessage
+            content = output.content if hasattr(output, "content") else str(output)
+
+            # Log the raw output for debugging
+            logger.debug(f"Raw LLM output: {content}")
+
+            # Parse the structured output
+            try:
+                # Try to find JSON content in the output
+                json_start = content.find("{")
+                json_end = content.rfind("}") + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_content = content[json_start:json_end]
+                    analysis_dict = json.loads(json_content)
+                else:
+                    raise json.JSONDecodeError(
+                        "No JSON object found in output", content, 0
+                    )
+
+                analysis = LLMAnalysis(**analysis_dict)
+                return analysis.dict()
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse LLM output as JSON: {str(e)}")
+                logger.error(f"Raw output was: {content}")
+                raise
+            except ValidationError as e:
+                logger.error(f"Failed to validate LLM output: {str(e)}")
+                logger.error(f"Raw output was: {content}")
+                raise
 
         except Exception as e:
             logger.error(f"Error in LLM analysis: {str(e)}")
@@ -508,7 +665,8 @@ class IncidentDetector:
                 logger.debug(f"Indexing incident #{new_incident.id} in vector database")
                 qdrant_client = get_qdrant_client()
                 similarity_service = IncidentSimilarityService(
-                    qdrant_client=qdrant_client
+                    qdrant_client=qdrant_client,
+                    ai_engine=self.ai_engine,
                 )
 
                 incident_embedding = IncidentEmbedding(

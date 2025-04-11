@@ -134,14 +134,22 @@ class QdrantClient:
         )
         try:
             # Convert to Qdrant points
-            points = [
-                qdrant_models.PointStruct(
-                    id=v.id,
-                    vector=v.vector,
-                    payload=v.metadata,
+            points = []
+            for v in vectors:
+                try:
+                    # Try to convert ID to integer first
+                    point_id = int(v.id)
+                except (ValueError, TypeError):
+                    # If conversion fails, use string ID
+                    point_id = str(v.id)
+
+                points.append(
+                    qdrant_models.PointStruct(
+                        id=point_id,
+                        vector=v.vector,
+                        payload=v.metadata,
+                    )
                 )
-                for v in vectors
-            ]
 
             # Upsert points
             logger.debug(
@@ -151,6 +159,7 @@ class QdrantClient:
                 None,
                 lambda: self.client.upsert(
                     collection_name=collection_name,
+                    wait=True,  # Wait for operation to complete
                     points=points,
                 ),
             )
@@ -295,7 +304,7 @@ class QdrantClient:
                 None, lambda: self.client.get_collection(collection_name)
             )
             return {
-                "name": collection_info.name,
+                "name": collection_name,
                 "vector_size": collection_info.config.params.vectors.size,
                 "distance": collection_info.config.params.vectors.distance,
                 "points_count": collection_info.points_count,
@@ -315,26 +324,25 @@ class QdrantClient:
         self,
         collection_name: str,
         texts: List[str],
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> int:
         """
         Insert or update text chunks in the collection.
 
         :param collection_name: Name of the collection
         :param texts: List of text chunks to insert/update
+        :param metadata: Metadata to attach to each text chunk
         :returns: Number of points inserted
         """
         try:
             # Dynamically import AIEngine and AsyncOpenAI to avoid circular imports
             from system_guardian.services.ai.engine import AIEngine
-            from openai import AsyncOpenAI
 
             # Initialize OpenAI client
-            openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
 
             # Initialize AIEngine
             ai_engine = AIEngine(
                 vector_db_client=self,
-                llm_client=openai_client,
                 embedding_model=settings.openai_embedding_model,
                 llm_model=settings.openai_completion_model,
                 cache_size=100,
@@ -352,7 +360,7 @@ class QdrantClient:
                 VectorRecord(
                     id=str(uuid.uuid4()),
                     vector=embedding,
-                    metadata={"text": text},
+                    metadata={"text": text, **metadata},
                 )
                 for text, embedding in zip(texts, embeddings)
             ]
@@ -361,7 +369,7 @@ class QdrantClient:
             success = await self.upsert_vectors(collection_name, vectors)
             if not success:
                 raise Exception("Failed to upsert vectors")
-
+            logger.info(f"Successfully upserted vectors to {collection_name}")
             return len(vectors)
         except Exception as e:
             logger.error(f"Failed to upsert texts to {collection_name}: {e}")
@@ -408,6 +416,56 @@ class QdrantClient:
             return True
 
         return False
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(
+            (ConnectionError, TimeoutError, UnexpectedResponse)
+        ),
+    )
+    async def get_existing_records(
+        self,
+        collection_name: str,
+        vector_size: int,
+        metadata_key: str = "incident_id",
+        limit: int = 10000,
+    ) -> set[str]:
+        """
+        Get a set of existing record IDs from a collection based on a metadata key.
+
+        :param collection_name: Name of the collection to check
+        :param vector_size: Size of the vector for dummy search
+        :param metadata_key: Key in metadata to use for ID extraction
+        :param limit: Maximum number of records to check
+        :returns: Set of existing record IDs
+        """
+        existing_ids = set()
+        try:
+            # Check if collection exists first
+            collection_info = await self.get_collection_info(collection_name)
+            if collection_info:
+                # Search with empty vector to get all points
+                existing_points = await self.search_vectors(
+                    collection_name=collection_name,
+                    query_vector=[0] * vector_size,  # Dummy vector for search
+                    limit=limit,  # Large enough to get all points
+                )
+                existing_ids = {
+                    point.metadata.get(metadata_key)
+                    for point in existing_points
+                    if point.metadata and metadata_key in point.metadata
+                }
+                logger.info(
+                    f"Found {len(existing_ids)} existing records in {collection_name}"
+                )
+        except Exception as e:
+            logger.error(
+                f"Error getting existing records from {collection_name}: {str(e)}"
+            )
+            # Return empty set if failed to get existing IDs
+
+        return existing_ids
 
 
 @lru_cache()

@@ -2,7 +2,7 @@
 
 from typing import AsyncGenerator, Callable, Any
 import asyncio
-
+from system_guardian.settings import settings
 from fastapi import Depends
 from loguru import logger
 
@@ -50,8 +50,8 @@ async def initialize_vector_collections():
 
     # Standard collection names used in the application
     COLLECTIONS = {
-        "system_knowledge": 1536,  # OpenAI embedding dimension
-        "incidents": 1536,  # OpenAI embedding dimension
+        settings.qdrant_knowledge_collection_name: 1536,  # OpenAI embedding dimension
+        settings.qdrant_incidents_collection_name: 1536,  # OpenAI embedding dimension
     }
 
     logger.info("Pre-initializing Qdrant collections...")

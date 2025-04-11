@@ -59,7 +59,6 @@ def _setup_ai_engine(app: FastAPI) -> None:  # pragma: no cover
     :param app: fastAPI application.
     """
     # Initialize OpenAI client
-    openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
 
     # Get Qdrant client
     qdrant_client = get_qdrant_client()
@@ -70,7 +69,6 @@ def _setup_ai_engine(app: FastAPI) -> None:  # pragma: no cover
     # Initialize AI engine
     ai_engine = AIEngine(
         vector_db_client=qdrant_client,
-        llm_client=openai_client,
         embedding_model=settings.openai_embedding_model,
         llm_model=settings.openai_completion_model,
         enable_metrics=True,
@@ -90,8 +88,8 @@ async def _initialize_qdrant_collections(qdrant_client) -> None:  # pragma: no c
 
     # Standard collection names used in the application
     COLLECTIONS = {
-        "system_knowledge": 1536,  # OpenAI embedding dimension
-        "incidents": 1536,  # OpenAI embedding dimension
+        settings.qdrant_knowledge_collection_name: 1536,  # OpenAI embedding dimension
+        settings.qdrant_incidents_collection_name: 1536,  # OpenAI embedding dimension
     }
 
     try:
