@@ -148,7 +148,7 @@ The RabbitMQ management interface allows you to monitor and manage the message q
 
 FastAPI's auto-generated API documentation interface:
 
-- **Access URL**: [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
+- **Access URL**: [http://localhost:5566/api/docs](http://localhost:8000/api/docs)
 
 These visualization interfaces greatly simplify the development and debugging process, allowing you to intuitively understand the operational status of the system.
 

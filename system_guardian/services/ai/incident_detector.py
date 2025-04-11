@@ -287,7 +287,6 @@ IMPORTANT: Respond with a valid JSON object containing ONLY the required fields 
 
                 # Get LLM response
                 output = await self.ai_engine.llm.ainvoke(_input.to_string())
-                logger.warning(f"Output: {output}")
 
                 # Extract content from AIMessage
                 content = output.content if hasattr(output, "content") else str(output)
@@ -420,7 +419,6 @@ IMPORTANT: Respond with a valid JSON object containing ONLY the required fields 
             # Call LLM for analysis
             # output = await self.llm_client.ainvoke(_input.to_string())
             output = await self.ai_engine.llm.ainvoke(_input.to_string())
-            logger.warning(f"Output: {output}")
             # Extract content from AIMessage
             content = output.content if hasattr(output, "content") else str(output)
 

@@ -116,7 +116,7 @@ class ResolutionGenerator(AIServiceBase):
             else:
                 # If force_regenerate is True, check if resolution exists to update it
                 existing_query = select(Resolution).where(
-                    Resolution.incident_id == incident_id
+                    Resolution.incident_id == incidet_id
                 )
                 existing_result = await session.execute(existing_query)
                 existing_resolution = existing_result.scalars().first()
@@ -139,7 +139,7 @@ class ResolutionGenerator(AIServiceBase):
                 similar_incidents = await self._find_similar_incidents(incident_text)
 
                 # Generate resolution using the AI engine's LLM
-                resolution_text, confidence = await self._generate_resolution_text(
+                resolution_text, confidence = await self._generate_resution_text(
                     incident=incident,
                     similar_incidents=similar_incidents,
                     model=model,
